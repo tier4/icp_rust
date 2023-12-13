@@ -1,0 +1,22 @@
+[package]
+name = "icp"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+kdtree = "0.7.0"
+nalgebra = "0.32.3"
+
+[dev-dependencies]
+piston_window = "0.120.0"
+
+[dev-dependencies.plotters-piston]
+git = "https://github.com/plotters-rs/plotters-piston.git"
+rev = "7293411c"
+
+[dev-dependencies.plotters]
+git = "https://github.com/plotters-rs/plotters.git"
+default_features = false
+features = ["ttf", "all_series"]
