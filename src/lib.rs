@@ -1,21 +1,46 @@
 // use kdtree::distance::squared_equclidean;
-use nalgebra::{Vector2, Vector3, Matrix3};
+use nalgebra::{Vector2, Vector3, Matrix2, Matrix3};
 
 type Param = nalgebra::Vector3<f64>;
-type Output = nalgebra::Vector2<f64>;
 type Measurement = nalgebra::Vector2<f64>;
+type Jacobian = nalgebra::Matrix2x3<f64>;
+type Hessian = nalgebra::Matrix3<f64>;
+type Output = nalgebra::Vector2<f64>;
 
-fn transform(param: &Param, landmark: &Measurement) -> Vector2<f64> {
-    let theta = param[0];
-    let tx = param[1];
-    let ty = param[2];
+fn calc_rt(param: &Vector3<f64>) -> (Matrix2<f64>, Vector2<f64>) {
+    let theta = param[2];
     let cos = f64::cos(theta);
     let sin = f64::sin(theta);
-    let x = landmark[0];
-    let y = landmark[0];
-    Vector2::new(
-        cos * x - sin * y + tx,
-        sin * x + cos * y + ty)
+
+    let R = Matrix2::new(
+        cos, -sin,
+        sin, cos);
+
+    let vx = param[0];
+    let vy = param[1];
+
+    let t = if theta == 0. {
+        Vector2::new(vx, vy)
+    } else {
+        Vector2::new(
+            (sin * vx - (1. - cos) * vy) / theta,
+            ((1. - cos) * vx + sin * vy) / theta)
+    };
+    (R, t)
+}
+
+fn exp_se2(param: &Vector3<f64>) -> Matrix3<f64> {
+    let (R, t) = calc_rt(param);
+
+    Matrix3::new(
+        R[(0, 0)], R[(0, 1)], t[0],
+        R[(1, 0)], R[(1, 1)], t[1],
+        0., 0., 1.)
+}
+
+fn transform(param: &Param, landmark: &Measurement) -> Measurement {
+    let (R, t) = calc_rt(param);
+    R * landmark + t
 }
 
 pub fn residual(param: &Param, src: &Measurement, dst: &Measurement) -> Output {
@@ -51,27 +76,93 @@ fn inverse_3x3(matrix: &Matrix3<f64>) -> Option<Matrix3<f64>> {
     Some(mat / det)
 }
 
-fn jacobian() {
+fn jacobian(param: &Param, landmark: &Measurement) -> Jacobian {
+    let a = Vector2::new(-landmark[1], landmark[0]);
+    let (R, t) = calc_rt(param);
+    let b = R * a;
+    Jacobian::new(
+        R[(0, 0)], R[(0, 1)], b[0],
+        R[(1, 0)], R[(1, 1)], b[1])
 }
 
-// fn gauss_newton_update() {
-//     let (jtr, jtj) = src.iter().zip(dst.iter()).fold(
-//         (Jacobian::zero(), Hessian::Zero()),
-//         |jtr, jtj, (s, d)| {
-//         let j = jacobian(param, s);
-//         let r = transform(param, s) - d;
-//         let jtr_ = j.transpose() * r;
-//         let jtj_ = j.transpose() * j;
-//         (jtr + jtr_, jtj + jtj_)
-//     });
+// fn jacobian(param: &Param, landmark: &Measurement) -> Jacobian {
+//     let theta = param[0];
+//     let x = landmark[0];
+//     let y = landmark[1];
+//     let cos = f64::cos(theta);
+//     let sin = f64::sin(theta);
 //
-//     inverse_3x3(jtj)
-//     jtr ;
+//     Jacobian::new(
+//         -sin * x - cos * y, 1., 0.,
+//         cos * x - sin * y, 0., 1.)
 // }
+
+fn gauss_newton_update(param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>) {
+    let (jtr, jtj) = src.iter().zip(dst.iter()).fold(
+        (Param::zeros(), Hessian::zeros()),
+        |(jtr, jtj), (s, d)| {
+        let j = jacobian(param, s);
+        let r = transform(param, s) - d;
+        let jtr_: Param = j.transpose() * r;
+        let jtj_: Hessian = j.transpose() * j;
+        (jtr + jtr_, jtj + jtj_)
+    });
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_exp_se2() {
+        // In python,
+        // >>> import numpy as np
+        // >>> from scipy.linalg import expm
+        // >>> def skew_se2(v):
+        // ...     return np.array([
+        // ...         [0, -v[2], v[0]],
+        // ...         [v[2], 0, v[1]],
+        // ...         [0, 0, 0]])
+        // ...
+        // >>> a = np.array([-0.29638466, -0.15797957, -0.89885138])
+        // >>> expm(skew_se2(a))
+        // array([[ 0.6225093 ,  0.7826124 , -0.32440305],
+        //        [-0.7826124 ,  0.6225093 , -0.01307704],
+        //        [ 0.        ,  0.        ,  1.        ]])
+
+        let transform = exp_se2(&Vector3::new(-0.29638466, -0.15797957, -0.89885138));
+        let expected = Matrix3::new(
+             0.6225093,  0.7826124, -0.32440305,
+            -0.7826124,  0.6225093, -0.01307704,
+             0.       ,  0.       ,  1.        );
+        assert!((transform - expected).norm() < 1e-6);
+
+        // >>> a = np.array([-0.24295876,  0.95847196,  0.91052553])
+        // >>> expm(skew_se2(a))
+        // array([[ 0.61333076, -0.78982617, -0.61778258],
+        //        [ 0.78982617,  0.61333076,  0.72824049],
+        //        [ 0.        ,  0.        ,  1.        ]])
+
+        let transform = exp_se2(&Vector3::new(-0.24295876, 0.95847196, 0.91052553));
+        let expected = Matrix3::new(
+            0.61333076, -0.78982617, -0.61778258,
+            0.78982617,  0.61333076,  0.72824049,
+            0.        ,  0.        ,  1.        );
+        assert!((transform - expected).norm() < 1e-6);
+
+        // >>> a = np.array([10., -20., 0.])
+        // >>> expm(skew_se2(a))
+        // array([[  1.,   0.,  10.],
+        //        [  0.,   1., -20.],
+        //        [  0.,   0.,   1.]])
+
+        let transform = exp_se2(&Vector3::new(10., -20., 0.));
+        let expected = Matrix3::new(
+             1., 0., 10.,
+             0., 1., -20.,
+             0., 0., 1.);
+        assert!((transform - expected).norm() < 1e-6);
+    }
 
     #[test]
     fn test_residual() {
@@ -113,5 +204,19 @@ mod tests {
             None => panic!("Should return Some(inverse_matrix)"),
         };
         assert!((inverse * matrix - identity).norm() < 1e-14);
+    }
+
+    #[test]
+    fn test_jacobian() {
+        let src = Measurement::new(100.0, 200.0);
+        let dst = Measurement::new(180.0, 250.0);
+
+        let param = Param::new(10.0, 10.0, 3.14);
+        let dparam = Param::new(-0.3, -0.5, 0.01);
+        let r0 = residual(&param, &src, &dst);
+        let r1 = residual(&(param + dparam), &src, &dst);
+        let j = jacobian(&param, &src);
+        let d = (r1 - r0) - j * dparam;
+        assert!(d.norm() < 1e-2);
     }
 }
