@@ -1,5 +1,6 @@
 // use kdtree::distance::squared_equclidean;
 use nalgebra::{Vector2, Vector3, Matrix2, Matrix3};
+use nalgebra::Cholesky;
 
 type Param = nalgebra::Vector3<f64>;
 type Measurement = nalgebra::Vector2<f64>;
@@ -85,19 +86,7 @@ fn jacobian(param: &Param, landmark: &Measurement) -> Jacobian {
         R[(1, 0)], R[(1, 1)], b[1])
 }
 
-// fn jacobian(param: &Param, landmark: &Measurement) -> Jacobian {
-//     let theta = param[0];
-//     let x = landmark[0];
-//     let y = landmark[1];
-//     let cos = f64::cos(theta);
-//     let sin = f64::sin(theta);
-//
-//     Jacobian::new(
-//         -sin * x - cos * y, 1., 0.,
-//         cos * x - sin * y, 0., 1.)
-// }
-
-fn gauss_newton_update(param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>) {
+fn gauss_newton_update(param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>) -> Param {
     let (jtr, jtj) = src.iter().zip(dst.iter()).fold(
         (Param::zeros(), Hessian::zeros()),
         |(jtr, jtj), (s, d)| {
@@ -107,6 +96,8 @@ fn gauss_newton_update(param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurem
         let jtj_: Hessian = j.transpose() * j;
         (jtr + jtr_, jtj + jtj_)
     });
+    let update = Cholesky::new_unchecked(jtj).solve(&jtr);
+    -update
 }
 
 #[cfg(test)]
@@ -207,16 +198,24 @@ mod tests {
     }
 
     #[test]
-    fn test_jacobian() {
-        let src = Measurement::new(100.0, 200.0);
-        let dst = Measurement::new(180.0, 250.0);
+    fn test_gauss_newton_update() {
+        let true_param = Param::new(10.0, 30.0, -0.15);
+        let dparam = Param::new(0.3, -0.5, 0.001);
 
-        let param = Param::new(10.0, 10.0, 3.14);
-        let dparam = Param::new(-0.3, -0.5, 0.01);
-        let r0 = residual(&param, &src, &dst);
-        let r1 = residual(&(param + dparam), &src, &dst);
-        let j = jacobian(&param, &src);
-        let d = (r1 - r0) - j * dparam;
-        assert!(d.norm() < 1e-2);
+        let src = vec![
+            Measurement::new(-8.76116663, 3.50338231),
+            Measurement::new(-5.21184804, -1.91561705),
+            Measurement::new(6.63141168, 4.8915293),
+            Measurement::new(-2.29215281, -4.72658399),
+            Measurement::new(6.81352587, -0.81624617)];
+        let dst = src.iter().map(|p| transform(&true_param, p)).collect::<Vec<_>>();
+
+        let initial_param = true_param + dparam;
+        let update = gauss_newton_update(&initial_param, &src, &dst);
+        let updated_param = initial_param + update;
+
+        let e0 = error(&initial_param, &src, &dst);
+        let e1 = error(&updated_param, &src, &dst);
+        assert!(e1 < e0 * 0.01);
     }
 }
