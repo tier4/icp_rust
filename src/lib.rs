@@ -157,10 +157,30 @@ mod tests {
 
     #[test]
     fn test_residual() {
-        let param: Param = Vector3::new(std::f64::consts::FRAC_PI_2, 10f64, 20f64);
+        let param: Param = Vector3::new(-10., 20., 0.01);
         let src = Vector2::new(7f64, 8f64);
         let dst = transform(&param, &src);
         assert_eq!(residual(&param, &src, &dst), Vector2::zeros());
+    }
+
+    #[test]
+    fn test_error() {
+        let src = vec![
+           Measurement::new(-6., 9.),
+           Measurement::new(-1., 9.),
+           Measurement::new(-4., -4.)];
+
+        let dst = vec![
+           Measurement::new(-4., 4.),
+           Measurement::new(0., 3.),
+           Measurement::new(-3., -8.)];
+
+        let param: Param = Vector3::new(10., 20., 0.01);
+        let r0 = residual(&param, &src[0], &dst[0]);
+        let r1 = residual(&param, &src[1], &dst[1]);
+        let r2 = residual(&param, &src[2], &dst[2]);
+        let expected = r0.norm_squared() + r1.norm_squared() + r2.norm_squared();
+        assert_eq!(error(&param, &src, &dst), expected);
     }
 
     #[test]
