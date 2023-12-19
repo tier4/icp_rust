@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 kdtree = "0.7.0"
 nalgebra = "0.32.3"
+num-traits = "0.2"
 
 [dev-dependencies]
 piston_window = "0.120.0"

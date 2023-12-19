@@ -2,6 +2,8 @@
 use nalgebra::{Vector2, Vector3, Matrix2, Matrix3};
 use nalgebra::Cholesky;
 
+mod median;
+
 type Param = nalgebra::Vector3<f64>;
 type Measurement = nalgebra::Vector2<f64>;
 type Jacobian = nalgebra::Matrix2x3<f64>;
