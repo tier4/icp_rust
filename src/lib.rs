@@ -8,7 +8,8 @@ type Param = nalgebra::Vector3<f64>;
 type Measurement = nalgebra::Vector2<f64>;
 type Jacobian = nalgebra::Matrix2x3<f64>;
 type Hessian = nalgebra::Matrix3<f64>;
-type Output = nalgebra::Vector2<f64>;
+
+const huber_k: f64 = 1.345;
 
 fn calc_rt(param: &Vector3<f64>) -> (Matrix2<f64>, Vector2<f64>) {
     let theta = param[2];
@@ -46,7 +47,7 @@ fn transform(param: &Param, landmark: &Measurement) -> Measurement {
     R * landmark + t
 }
 
-pub fn residual(param: &Param, src: &Measurement, dst: &Measurement) -> Output {
+pub fn residual(param: &Param, src: &Measurement, dst: &Measurement) -> Measurement {
     transform(param, src) - dst
 }
 
@@ -70,7 +71,7 @@ fn inverse_3x3(matrix: &Matrix3<f64>) -> Option<Matrix3<f64>> {
 
     let det = m00 * (m22*m11-m21*m12) - m10 * (m22*m01-m21*m02) + m20 * (m12*m01-m11*m02);
     if det == 0f64 {
-        return None
+        return None;
     }
     let mat = Matrix3::new(
         m22*m11-m21*m12, -(m22*m01-m21*m02), m12*m01-m11*m02,
@@ -100,6 +101,59 @@ fn gauss_newton_update(param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurem
     });
     let update = Cholesky::new_unchecked(jtj).solve(&jtr);
     -update
+}
+
+fn calc_mads(residuals: &Vec<Measurement>) -> Option<Vec<f64>> {
+    let dimension = residuals[0].len();
+    let mut mads = vec![0f64; dimension];
+    for j in 0..dimension {
+        let jth_dim = residuals.iter().map(|r| r[j]).collect::<Vec<_>>();
+        mads[j] = match mad(&jth_dim) {
+            Some(s) => s,
+            None => return None,
+        };
+    }
+    Some(mads)
+}
+
+fn weighted_gauss_newton_update(
+    param: &Param,
+    src: &Vec<Measurement>,
+    dst: &Vec<Measurement>,
+) -> Option<Param> {
+    debug_assert_eq!(src.len(), dst.len());
+
+    if src.len() == 0 || src.len() < src[0].len() {
+        // The input does not have sufficient samples to estimate the update
+        return None;
+    }
+
+    let residuals = src
+        .iter()
+        .zip(dst.iter())
+        .map(|(s, d)| residual(param, s, d))
+        .collect::<Vec<_>>();
+
+    let mads = match calc_mads(&residuals) {
+        Some(m) => m,
+        None => return None,
+    };
+
+    let mut jtr = Param::zeros();
+    let mut jtj = Hessian::zeros();
+    for (s, r) in src.iter().zip(residuals.iter()) {
+        let jacobian_i = jacobian(param, s);
+        for (j, jacobian_ij) in jacobian_i.row_iter().enumerate() {
+            let r_ij = r[j];
+            let w_ij = drho(r_ij * r_ij, huber_k);
+            let g = 1. / mads[j];
+            jtr += w_ij * g * jacobian_ij.transpose() * r_ij;
+            jtj += w_ij * g * jacobian_ij.transpose() * jacobian_ij;
+        }
+    }
+
+    let update = Cholesky::new_unchecked(jtj).solve(&jtr);
+    Some(-update)
 }
 
 fn rho(e: f64, k: f64) -> f64 {
@@ -314,5 +368,94 @@ mod tests {
 
         let a = vec![-53., -36.];
         assert_eq!(mad(&a), Some(8.5));
+    }
+
+    #[test]
+    fn test_weighted_gauss_newton_update() {
+        let true_param = Param::new(10.0, 30.0, -0.15);
+        let dparam = Param::new(0.3, -0.5, 0.001);
+        let initial_param = true_param + dparam;
+
+        let src = vec![];
+        let dst = vec![];
+        assert!(weighted_gauss_newton_update(&initial_param, &src, &dst).is_none());
+
+        let src = vec![Measurement::new(-8.89304516, 0.54202289)];
+        let dst = vec![transform(&true_param, &src[0])];
+        assert!(weighted_gauss_newton_update(&initial_param, &src, &dst).is_none());
+
+        let src = vec![
+            Measurement::new(-8.89304516, 0.54202289),
+            Measurement::new(-4.03198385, -2.81807802),
+        ];
+        let dst = src
+            .iter()
+            .map(|p| transform(&true_param, &p))
+            .collect::<Vec<_>>();
+        assert!(weighted_gauss_newton_update(&initial_param, &src, &dst).is_some());
+
+        let src = vec![
+            Measurement::new(-8.89304516, 0.54202289),
+            Measurement::new(-4.03198385, -2.81807802),
+            Measurement::new(-5.9267953, 9.62339266),
+            Measurement::new(-4.04966218, -4.44595403),
+            Measurement::new(-2.8636942, -9.13843999),
+            Measurement::new(-6.97749644, -8.90180581),
+            Measurement::new(-9.66454985, 6.32282424),
+            Measurement::new(7.02264007, -0.88684585),
+            Measurement::new(4.1970011, -1.42366424),
+            Measurement::new(-1.98903219, -0.96437383),
+            Measurement::new(-0.68034875, -0.48699014),
+            Measurement::new(1.89645382, 1.861194),
+            Measurement::new(7.09550743, 2.18289525),
+            Measurement::new(-7.95383118, -5.16650913),
+            Measurement::new(-5.40235599, 2.70675665),
+            Measurement::new(-5.38909696, -5.48180288),
+            Measurement::new(-9.00498232, -5.12191142),
+            Measurement::new(-8.54899319, -3.25752055),
+            Measurement::new(6.89969814, 3.53276123),
+            Measurement::new(5.06875729, -0.2891854),
+        ];
+
+        // noise follows the normal distribution of
+        // mean 0.0 and standard deviation 0.01
+        let noise = [
+            Measurement::new(0.0105879, 0.01302535),
+            Measurement::new(0.01392508, 0.0083586),
+            Measurement::new(0.01113885, -0.00693269),
+            Measurement::new(0.01673124, -0.01735564),
+            Measurement::new(-0.01219263, 0.00080933),
+            Measurement::new(-0.00396817, 0.00111582),
+            Measurement::new(-0.00444043, 0.00658505),
+            Measurement::new(-0.01576271, -0.00701065),
+            Measurement::new(0.00464, -0.0040679),
+            Measurement::new(-0.32268585, 0.49653010), // but add much larger noise here
+            Measurement::new(0.00269374, -0.00787015),
+            Measurement::new(-0.00494243, 0.00350137),
+            Measurement::new(0.00343766, -0.00039311),
+            Measurement::new(0.00661565, -0.00341112),
+            Measurement::new(-0.00936695, -0.00673899),
+            Measurement::new(-0.00240039, -0.00314409),
+            Measurement::new(-0.01434128, -0.0058539),
+            Measurement::new(0.00874225, 0.00295633),
+            Measurement::new(0.00736213, -0.00328875),
+            Measurement::new(0.00585082, -0.01232619),
+        ];
+
+        assert_eq!(src.len(), noise.len());
+        let dst = src
+            .iter()
+            .zip(noise.iter())
+            .map(|(p, n)| transform(&true_param, p) + n)
+            .collect::<Vec<_>>();
+        let update = match weighted_gauss_newton_update(&initial_param, &src, &dst) {
+            Some(u) => u,
+            None => panic!(),
+        };
+        let updated_param = initial_param + update;
+
+        let e0 = error(&initial_param, &src, &dst);
+        let e1 = error(&updated_param, &src, &dst);
+        assert!(e1 < e0 * 0.1);
     }
 }
