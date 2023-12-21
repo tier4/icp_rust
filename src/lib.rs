@@ -18,7 +18,7 @@ fn calc_rt(param: &Vector3<f64>) -> (Matrix2<f64>, Vector2<f64>) {
     let sin = f64::sin(theta);
 
     #[rustfmt::skip]
-    let R = Matrix2::new(
+    let rot = Matrix2::new(
         cos, -sin,
         sin, cos,
     );
@@ -34,23 +34,23 @@ fn calc_rt(param: &Vector3<f64>) -> (Matrix2<f64>, Vector2<f64>) {
             ((1. - cos) * vx + sin * vy) / theta,
         )
     };
-    (R, t)
+    (rot, t)
 }
 
 fn exp_se2(param: &Vector3<f64>) -> Matrix3<f64> {
-    let (R, t) = calc_rt(param);
+    let (rot, t) = calc_rt(param);
 
     #[rustfmt::skip]
     Matrix3::new(
-        R[(0, 0)], R[(0, 1)], t[0],
-        R[(1, 0)], R[(1, 1)], t[1],
+        rot[(0, 0)], rot[(0, 1)], t[0],
+        rot[(1, 0)], rot[(1, 1)], t[1],
         0., 0., 1.,
     )
 }
 
 fn transform(param: &Param, landmark: &Measurement) -> Measurement {
-    let (R, t) = calc_rt(param);
-    R * landmark + t
+    let (rot, t) = calc_rt(param);
+    rot * landmark + t
 }
 
 pub fn residual(param: &Param, src: &Measurement, dst: &Measurement) -> Measurement {
@@ -94,9 +94,12 @@ fn inverse_3x3(matrix: &Matrix3<f64>) -> Option<Matrix3<f64>> {
 
 fn jacobian(param: &Param, landmark: &Measurement) -> Jacobian {
     let a = Vector2::new(-landmark[1], landmark[0]);
-    let (R, t) = calc_rt(param);
-    let b = R * a;
-    Jacobian::new(R[(0, 0)], R[(0, 1)], b[0], R[(1, 0)], R[(1, 1)], b[1])
+    let (rot, _t) = calc_rt(param);
+    let b = rot * a;
+    #[rustfmt::skip]
+    Jacobian::new(
+        rot[(0, 0)], rot[(0, 1)], b[0],
+        rot[(1, 0)], rot[(1, 1)], b[1])
 }
 
 fn check_input_size(input: &Vec<Measurement>) -> bool {
