@@ -3,7 +3,10 @@ use num_traits::Num;
 use std::cmp::PartialOrd;
 use std::marker::Copy;
 
-pub fn median<T: Num + PartialOrd + Copy>(input: &Vec<T>) -> Option<f64> where T: Into<f64> {
+pub fn median<T: Num + PartialOrd + Copy>(input: &Vec<T>) -> Option<f64>
+where
+    T: Into<f64>,
+{
     let n = input.len();
     if n == 0 {
         return None;
@@ -17,7 +20,10 @@ pub fn median<T: Num + PartialOrd + Copy>(input: &Vec<T>) -> Option<f64> where T
     Some((b + c) / 2.)
 }
 
-fn find_separated<T: Num + PartialOrd + Copy>(input: &Vec<T>, index: usize) -> T where T: Into<f64> {
+fn find_separated<T: Num + PartialOrd + Copy>(input: &Vec<T>, index: usize) -> T
+where
+    T: Into<f64>,
+{
     if input.len() == 1 {
         return input[0];
     }

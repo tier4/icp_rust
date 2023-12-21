@@ -1,6 +1,6 @@
 // use kdtree::distance::squared_equclidean;
-use nalgebra::{Vector2, Vector3, Matrix2, Matrix3};
 use nalgebra::Cholesky;
+use nalgebra::{Matrix2, Matrix3, Vector2, Vector3};
 
 mod median;
 
@@ -28,7 +28,8 @@ fn calc_rt(param: &Vector3<f64>) -> (Matrix2<f64>, Vector2<f64>) {
     } else {
         Vector2::new(
             (sin * vx - (1. - cos) * vy) / theta,
-            ((1. - cos) * vx + sin * vy) / theta)
+            ((1. - cos) * vx + sin * vy) / theta,
+        )
     };
     (R, t)
 }
@@ -84,21 +85,20 @@ fn jacobian(param: &Param, landmark: &Measurement) -> Jacobian {
     let a = Vector2::new(-landmark[1], landmark[0]);
     let (R, t) = calc_rt(param);
     let b = R * a;
-    Jacobian::new(
-        R[(0, 0)], R[(0, 1)], b[0],
-        R[(1, 0)], R[(1, 1)], b[1])
+    Jacobian::new(R[(0, 0)], R[(0, 1)], b[0], R[(1, 0)], R[(1, 1)], b[1])
 }
 
 fn gauss_newton_update(param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>) -> Param {
     let (jtr, jtj) = src.iter().zip(dst.iter()).fold(
         (Param::zeros(), Hessian::zeros()),
         |(jtr, jtj), (s, d)| {
-        let j = jacobian(param, s);
-        let r = transform(param, s) - d;
-        let jtr_: Param = j.transpose() * r;
-        let jtj_: Hessian = j.transpose() * j;
-        (jtr + jtr_, jtj + jtj_)
-    });
+            let j = jacobian(param, s);
+            let r = transform(param, s) - d;
+            let jtr_: Param = j.transpose() * r;
+            let jtj_: Hessian = j.transpose() * j;
+            (jtr + jtr_, jtj + jtj_)
+        },
+    );
     let update = Cholesky::new_unchecked(jtj).solve(&jtr);
     -update
 }
@@ -160,14 +160,22 @@ fn rho(e: f64, k: f64) -> f64 {
     debug_assert!(e >= 0.);
     debug_assert!(k >= 0.);
     let k_squared = k * k;
-    if e <= k_squared { e } else { 2. * k * e.sqrt() - k_squared }
+    if e <= k_squared {
+        e
+    } else {
+        2. * k * e.sqrt() - k_squared
+    }
 }
 
 fn drho(e: f64, k: f64) -> f64 {
     debug_assert!(e >= 0.);
     debug_assert!(k >= 0.);
     let k_squared = k * k;
-    if e <= k_squared { 1. } else { k / e.sqrt() }
+    if e <= k_squared {
+        1.
+    } else {
+        k / e.sqrt()
+    }
 }
 
 fn mad(input: &Vec<f64>) -> Option<f64> {
@@ -175,7 +183,7 @@ fn mad(input: &Vec<f64>) -> Option<f64> {
         None => return None,
         Some(m) => m,
     };
-    let a = input.iter().map(|e| { (e - m).abs() }).collect::<Vec<f64>>();
+    let a = input.iter().map(|e| (e - m).abs()).collect::<Vec<f64>>();
     return median::median(&a);
 }
 
@@ -306,8 +314,12 @@ mod tests {
             Measurement::new(-5.21184804, -1.91561705),
             Measurement::new(6.63141168, 4.8915293),
             Measurement::new(-2.29215281, -4.72658399),
-            Measurement::new(6.81352587, -0.81624617)];
-        let dst = src.iter().map(|p| transform(&true_param, p)).collect::<Vec<_>>();
+            Measurement::new(6.81352587, -0.81624617),
+        ];
+        let dst = src
+            .iter()
+            .map(|p| transform(&true_param, p))
+            .collect::<Vec<_>>();
 
         let initial_param = true_param + dparam;
         let update = gauss_newton_update(&initial_param, &src, &dst);
