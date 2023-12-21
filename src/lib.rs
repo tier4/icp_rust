@@ -99,7 +99,17 @@ fn jacobian(param: &Param, landmark: &Measurement) -> Jacobian {
     Jacobian::new(R[(0, 0)], R[(0, 1)], b[0], R[(1, 0)], R[(1, 1)], b[1])
 }
 
-fn gauss_newton_update(param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>) -> Param {
+fn check_input_size(input: &Vec<Measurement>) -> bool {
+    // Check if the input does not have sufficient samples to estimate the update
+    input.len() > 0 && input.len() >= input[0].len()
+}
+
+fn gauss_newton_update(param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>) -> Option<Param> {
+    if !check_input_size(&src) {
+        // The input does not have sufficient samples to estimate the update
+        return None;
+    }
+
     let (jtr, jtj) = src.iter().zip(dst.iter()).fold(
         (Param::zeros(), Hessian::zeros()),
         |(jtr, jtj), (s, d)| {
@@ -111,7 +121,7 @@ fn gauss_newton_update(param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurem
         },
     );
     let update = Cholesky::new_unchecked(jtj).solve(&jtr);
-    -update
+    Some(-update)
 }
 
 fn calc_mads(residuals: &Vec<Measurement>) -> Option<Vec<f64>> {
@@ -134,7 +144,7 @@ fn weighted_gauss_newton_update(
 ) -> Option<Param> {
     debug_assert_eq!(src.len(), dst.len());
 
-    if src.len() == 0 || src.len() < src[0].len() {
+    if !check_input_size(&src) {
         // The input does not have sufficient samples to estimate the update
         return None;
     }
@@ -335,6 +345,25 @@ mod tests {
     fn test_gauss_newton_update() {
         let true_param = Param::new(10.0, 30.0, -0.15);
         let dparam = Param::new(0.3, -0.5, 0.001);
+        let initial_param = true_param + dparam;
+
+        let src = vec![];
+        let dst = vec![];
+        assert!(gauss_newton_update(&initial_param, &src, &dst).is_none());
+
+        let src = vec![Measurement::new(-8.89304516, 0.54202289)];
+        let dst = vec![transform(&true_param, &src[0])];
+        assert!(gauss_newton_update(&initial_param, &src, &dst).is_none());
+
+        let src = vec![
+            Measurement::new(-8.89304516, 0.54202289),
+            Measurement::new(-4.03198385, -2.81807802),
+        ];
+        let dst = vec![
+            transform(&true_param, &src[0]),
+            transform(&true_param, &src[1])
+        ];
+        assert!(gauss_newton_update(&initial_param, &src, &dst).is_some());
 
         let src = vec![
             Measurement::new(-8.76116663, 3.50338231),
@@ -348,8 +377,10 @@ mod tests {
             .map(|p| transform(&true_param, p))
             .collect::<Vec<_>>();
 
-        let initial_param = true_param + dparam;
-        let update = gauss_newton_update(&initial_param, &src, &dst);
+        let update = match gauss_newton_update(&initial_param, &src, &dst) {
+            Some(s) => s,
+            None => panic!("Return value cannot be None"),
+        };
         let updated_param = initial_param + update;
 
         let e0 = error(&initial_param, &src, &dst);
@@ -427,10 +458,10 @@ mod tests {
             Measurement::new(-8.89304516, 0.54202289),
             Measurement::new(-4.03198385, -2.81807802),
         ];
-        let dst = src
-            .iter()
-            .map(|p| transform(&true_param, &p))
-            .collect::<Vec<_>>();
+        let dst = vec![
+            transform(&true_param, &src[0]),
+            transform(&true_param, &src[1])
+        ];
         assert!(weighted_gauss_newton_update(&initial_param, &src, &dst).is_some());
 
         let src = vec![
@@ -489,7 +520,7 @@ mod tests {
             .collect::<Vec<_>>();
         let update = match weighted_gauss_newton_update(&initial_param, &src, &dst) {
             Some(u) => u,
-            None => panic!(),
+            None => panic!("Return value cannot be None"),
         };
         let updated_param = initial_param + update;
 
