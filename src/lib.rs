@@ -345,28 +345,33 @@ mod tests {
     }
 
     #[test]
-    fn test_gauss_newton_update() {
-        let true_param = Param::new(10.0, 30.0, -0.15);
-        let dparam = Param::new(0.3, -0.5, 0.001);
-        let initial_param = true_param + dparam;
+    fn test_gauss_newton_update_input_size() {
+        let param = Param::new(10.0, 30.0, -0.15);
 
         let src = vec![];
         let dst = vec![];
-        assert!(gauss_newton_update(&initial_param, &src, &dst).is_none());
+        assert!(gauss_newton_update(&param, &src, &dst).is_none());
 
         let src = vec![Measurement::new(-8.89304516, 0.54202289)];
-        let dst = vec![transform(&true_param, &src[0])];
-        assert!(gauss_newton_update(&initial_param, &src, &dst).is_none());
+        let dst = vec![transform(&param, &src[0])];
+        assert!(gauss_newton_update(&param, &src, &dst).is_none());
 
         let src = vec![
             Measurement::new(-8.89304516, 0.54202289),
             Measurement::new(-4.03198385, -2.81807802),
         ];
         let dst = vec![
-            transform(&true_param, &src[0]),
-            transform(&true_param, &src[1])
+            transform(&param, &src[0]),
+            transform(&param, &src[1])
         ];
-        assert!(gauss_newton_update(&initial_param, &src, &dst).is_some());
+        assert!(gauss_newton_update(&param, &src, &dst).is_some());
+    }
+
+    #[test]
+    fn test_gauss_newton_update() {
+        let true_param = Param::new(10.0, 30.0, -0.15);
+        let dparam = Param::new(0.3, -0.5, 0.001);
+        let initial_param = true_param + dparam;
 
         let src = vec![
             Measurement::new(-8.76116663, 3.50338231),
@@ -444,28 +449,33 @@ mod tests {
     }
 
     #[test]
-    fn test_weighted_gauss_newton_update() {
-        let true_param = Param::new(10.0, 30.0, -0.15);
-        let dparam = Param::new(0.3, -0.5, 0.001);
-        let initial_param = true_param + dparam;
+    fn test_weighted_gauss_newton_update_input_size() {
+        let param = Param::new(10.0, 30.0, -0.15);
 
         let src = vec![];
         let dst = vec![];
-        assert!(weighted_gauss_newton_update(&initial_param, &src, &dst).is_none());
+        assert!(weighted_gauss_newton_update(&param, &src, &dst).is_none());
 
         let src = vec![Measurement::new(-8.89304516, 0.54202289)];
-        let dst = vec![transform(&true_param, &src[0])];
-        assert!(weighted_gauss_newton_update(&initial_param, &src, &dst).is_none());
+        let dst = vec![transform(&param, &src[0])];
+        assert!(weighted_gauss_newton_update(&param, &src, &dst).is_none());
 
         let src = vec![
             Measurement::new(-8.89304516, 0.54202289),
             Measurement::new(-4.03198385, -2.81807802),
         ];
         let dst = vec![
-            transform(&true_param, &src[0]),
-            transform(&true_param, &src[1])
+            transform(&param, &src[0]),
+            transform(&param, &src[1])
         ];
-        assert!(weighted_gauss_newton_update(&initial_param, &src, &dst).is_some());
+        assert!(weighted_gauss_newton_update(&param, &src, &dst).is_some());
+    }
+
+    #[test]
+    fn test_weighted_gauss_newton_update() {
+        let true_param = Param::new(10.0, 30.0, -0.15);
+        let dparam = Param::new(0.3, -0.5, 0.001);
+        let initial_param = true_param + dparam;
 
         let src = vec![
             Measurement::new(-8.89304516, 0.54202289),
