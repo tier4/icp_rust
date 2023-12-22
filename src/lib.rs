@@ -7,13 +7,23 @@ mod median;
 
 pub type Param = nalgebra::Vector3<f64>;
 pub type Transform = nalgebra::Matrix3<f64>;
+pub type Rotation = Matrix2<f64>;
+pub type Translation = Vector2<f64>;
 pub type Measurement = nalgebra::Vector2<f64>;
 type Jacobian = nalgebra::Matrix2x3<f64>;
 type Hessian = nalgebra::Matrix3<f64>;
 
 const HUBER_K: f64 = 1.345;
 
-pub fn calc_rt(param: &Vector3<f64>) -> (Matrix2<f64>, Vector2<f64>) {
+pub fn get_rt(transform: &Transform) -> (Rotation, Translation) {
+    let rot = Rotation::new(
+        transform[(0, 0)], transform[(0, 1)],
+        transform[(1, 0)], transform[(1, 1)]);
+    let t = Translation::new(transform[(0, 2)], transform[(1, 2)]);
+    (rot, t)
+}
+
+pub fn calc_rt(param: &Param) -> (Rotation, Translation) {
     let theta = param[2];
     let cos = f64::cos(theta);
     let sin = f64::sin(theta);
@@ -276,6 +286,30 @@ mod tests {
             0., 0., 1.,
         );
         assert!((transform - expected).norm() < 1e-6);
+    }
+
+    #[test]
+    fn test_get_rt() {
+        #[rustfmt::skip]
+        let transform = Transform::new(
+            0.6225093, 0.7826124, -0.32440305,
+            -0.7826124, 0.6225093, -0.01307704,
+            0., 0., 1.,
+        );
+        let (rot, t) = get_rt(&transform);
+
+        #[rustfmt::skip]
+        let expected_rot = Rotation::new(
+            0.6225093, 0.7826124,
+            -0.7826124, 0.6225093,
+        );
+        let expected_t = Translation::new(
+            -0.32440305,
+             -0.01307704,
+        );
+
+        assert_eq!(rot, expected_rot);
+        assert_eq!(t, expected_t);
     }
 
     #[test]
