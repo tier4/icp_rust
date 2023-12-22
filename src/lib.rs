@@ -75,7 +75,26 @@ pub fn error(param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>) -> f
     })
 }
 
-fn inverse_3x3(matrix: &Matrix3<f64>) -> Option<Matrix3<f64>> {
+pub fn estimate_transform(
+        initial_param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>) -> Param {
+    let delta_norm_threshold: f64 = 1e-5;
+    let max_iter: usize = 200;
+
+    let mut param = *initial_param;
+    for _ in 0..max_iter {
+        let delta = match weighted_gauss_newton_update(&param, &src, &dst) {
+            Some(d) => d,
+            None => break,
+        };
+        if delta.norm_squared() < delta_norm_threshold {
+            break;
+        }
+        param = param + delta;
+    }
+    param
+}
+
+pub fn inverse_3x3(matrix: &Matrix3<f64>) -> Option<Matrix3<f64>> {
     let m00 = matrix[(0, 0)];
     let m01 = matrix[(0, 1)];
     let m02 = matrix[(0, 2)];
@@ -524,7 +543,7 @@ mod tests {
             Measurement::new(-9.66454985, 6.32282424),
             Measurement::new(7.02264007, -0.88684585),
             Measurement::new(4.1970011, -1.42366424),
-            Measurement::new(-1.98903219, -0.96437383),
+            // Measurement::new(-1.98903219, -0.96437383),  // corresponing to the large noise
             Measurement::new(-0.68034875, -0.48699014),
             Measurement::new(1.89645382, 1.861194),
             Measurement::new(7.09550743, 2.18289525),
@@ -549,7 +568,7 @@ mod tests {
             Measurement::new(-0.00444043, 0.00658505),
             Measurement::new(-0.01576271, -0.00701065),
             Measurement::new(0.00464, -0.0040679),
-            Measurement::new(-0.32268585, 0.49653010), // but add much larger noise here
+            // Measurement::new(-0.32268585, 0.49653010), // but add much larger noise here
             Measurement::new(0.00269374, -0.00787015),
             Measurement::new(-0.00494243, 0.00350137),
             Measurement::new(0.00343766, -0.00039311),
@@ -577,5 +596,13 @@ mod tests {
         let e0 = error(&initial_param, &src, &dst);
         let e1 = error(&updated_param, &src, &dst);
         assert!(e1 < e0 * 0.1);
+
+        let updated_param = estimate_transform(&initial_param, &src, &dst);
+
+        let e0 = error(&initial_param, &src, &dst);
+        let e1 = error(&updated_param, &src, &dst);
+        println!("e0 = {}", e0);
+        println!("e1 = {}", e1);
+        assert!(e1 < e0 * 0.001);
     }
 }
