@@ -10,9 +10,9 @@ use plotters::prelude::{ChartBuilder, Circle, LineSeries, GREEN, YELLOW, WHITE, 
 use plotters::style::Color;
 use plotters_piston::{draw_piston_window, PistonBackend};
 
-use icp::{residual, error};
+use icp;
 
-type Measurement = nalgebra::Vector2<f64>;
+type Measurement = icp::Measurement;
 
 fn make_kdtree(landmarks: &Vec<Measurement>) -> KdTree<f64, usize, [f64; 2]> {
     let mut kdtree = KdTree::new(2);
@@ -59,6 +59,25 @@ fn load_scan(lines: std::io::Lines<std::io::BufReader<File>>) -> Vec<Measurement
     return scan_landmarks;
 }
 
+fn calc_update(src_points: &Vec<Measurement>, dst_points: &Vec<Measurement>) -> icp::Param {
+    match icp::weighted_gauss_newton_update(&icp::Param::zeros(), &src_points, &dst_points) {
+        Some(update) => return update,
+        None => return icp::Param::zeros(),
+    };
+}
+
+fn estimate_transform(
+        src: &Vec<Measurement>, dst: &Vec<Measurement>, correspondence: &Vec<(usize, usize)>) -> icp::Transform {
+    let mut transform = icp::Transform::identity();
+    let src_points = correspondence.iter().map(|(src_index, _)| src[*src_index]).collect::<Vec<_>>();
+    let dst_points = correspondence.iter().map(|(_, dst_index)| dst[*dst_index]).collect::<Vec<_>>();
+    for _ in 0..5 {
+        let dparam = calc_update(&src_points, &dst_points);
+        transform = transform * icp::exp_se2(&dparam);
+    }
+    transform
+}
+
 fn to_point(p: &Measurement, color: &RGBColor) -> Circle<(f64, f64), u32> {
     Circle::new((p[0], p[1]), 2, color.mix(0.7).filled())
 }
@@ -74,34 +93,36 @@ fn main() {
     let mut src = vec![];
     let mut index = 0;
 
-    let mut draw = |b: PistonBackend| {
+    let mut draw = |b: PistonBackend| -> Result<(), Box<dyn std::error::Error>> {
         let filename = format!("scan/{}.txt", index);
         index += 1;
-        let lines = read_lines(filename).unwrap();
+        let lines = match read_lines(filename) {
+            Ok(lines) => lines,
+            Err(e) => { println!("{:?}", e); return Ok(()); },
+        };
         let dst = load_scan(lines);
-        println!("error = {}", error(&Vector3::new(0., 1., 2.), &src, &dst));
         let root = b.into_drawing_area();
         root.fill(&WHITE).unwrap();
 
-        println!("dst size = {}", dst.len());
         if src.len() == 0 {
             src = dst;
             return Ok(());
         }
 
-        println!("src size = {}", src.len());
         let correspondence = associate(&src, &dst);
 
         let mut cc = ChartBuilder::on(&root)
             .build_cartesian_2d(-WINDOW_RANGE..WINDOW_RANGE, -WINDOW_RANGE..WINDOW_RANGE).unwrap();
-        cc.draw_series(src.iter().map(|p| { to_point(&p, &YELLOW) })).unwrap();
-        cc.draw_series(dst.iter().map(|p| { to_point(&p, &GREEN) })).unwrap();
-        for (src_index, dst_index) in correspondence {
-            let sp = src[src_index];
-            let dp = dst[dst_index];
-            let line = LineSeries::new(vec![(sp[0], sp[1]), (dp[0], dp[1])], RED);
-            cc.draw_series(line).unwrap();
-        }
+        // cc.draw_series(src.iter().map(|p| { to_point(&p, &YELLOW) })).unwrap();
+        // cc.draw_series(dst.iter().map(|p| { to_point(&p, &GREEN) })).unwrap();
+
+        let transform = estimate_transform(&src, &dst, &correspondence);
+        cc.draw_series(dst.iter().map(|p| { to_point(&p, &RED) })).unwrap();
+        cc.draw_series(src.iter().map(|p| { to_point(&p, &BLUE) })).unwrap();
+        cc.draw_series(src.iter().map(|p| {
+            let dp = transform * Vector3::new(p[0], p[1], 1.);
+            to_point(&Vector2::new(dp[0], dp[1]), &GREEN)
+        })).unwrap();
 
         src = dst;
         Ok(())

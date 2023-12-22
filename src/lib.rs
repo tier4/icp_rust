@@ -5,14 +5,15 @@ use nalgebra::{Matrix2, Matrix3, Vector2, Vector3};
 
 mod median;
 
-type Param = nalgebra::Vector3<f64>;
-type Measurement = nalgebra::Vector2<f64>;
+pub type Param = nalgebra::Vector3<f64>;
+pub type Transform = nalgebra::Matrix3<f64>;
+pub type Measurement = nalgebra::Vector2<f64>;
 type Jacobian = nalgebra::Matrix2x3<f64>;
 type Hessian = nalgebra::Matrix3<f64>;
 
 const huber_k: f64 = 1.345;
 
-fn calc_rt(param: &Vector3<f64>) -> (Matrix2<f64>, Vector2<f64>) {
+pub fn calc_rt(param: &Vector3<f64>) -> (Matrix2<f64>, Vector2<f64>) {
     let theta = param[2];
     let cos = f64::cos(theta);
     let sin = f64::sin(theta);
@@ -37,7 +38,7 @@ fn calc_rt(param: &Vector3<f64>) -> (Matrix2<f64>, Vector2<f64>) {
     (rot, t)
 }
 
-fn exp_se2(param: &Vector3<f64>) -> Matrix3<f64> {
+pub fn exp_se2(param: &Param) -> Transform {
     let (rot, t) = calc_rt(param);
 
     #[rustfmt::skip]
@@ -107,7 +108,7 @@ fn check_input_size(input: &Vec<Measurement>) -> bool {
     input.len() > 0 && input.len() >= input[0].len()
 }
 
-fn gauss_newton_update(param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>) -> Option<Param> {
+pub fn gauss_newton_update(param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>) -> Option<Param> {
     if !check_input_size(&src) {
         // The input does not have sufficient samples to estimate the update
         return None;
@@ -123,6 +124,7 @@ fn gauss_newton_update(param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurem
             (jtr + jtr_, jtj + jtj_)
         },
     );
+    // TODO Check matrix rank before solving linear equation
     let update = Cholesky::new_unchecked(jtj).solve(&jtr);
     Some(-update)
 }
@@ -140,7 +142,7 @@ fn calc_mads(residuals: &Vec<Measurement>) -> Option<Vec<f64>> {
     Some(mads)
 }
 
-fn weighted_gauss_newton_update(
+pub fn weighted_gauss_newton_update(
     param: &Param,
     src: &Vec<Measurement>,
     dst: &Vec<Measurement>,
@@ -176,6 +178,7 @@ fn weighted_gauss_newton_update(
         }
     }
 
+    // TODO Check matrix rank before solving linear equation
     let update = Cholesky::new_unchecked(jtj).solve(&jtr);
     Some(-update)
 }
