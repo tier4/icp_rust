@@ -11,7 +11,7 @@ pub type Measurement = nalgebra::Vector2<f64>;
 type Jacobian = nalgebra::Matrix2x3<f64>;
 type Hessian = nalgebra::Matrix3<f64>;
 
-const huber_k: f64 = 1.345;
+const HUBER_K: f64 = 1.345;
 
 pub fn calc_rt(param: &Vector3<f64>) -> (Matrix2<f64>, Vector2<f64>) {
     let theta = param[2];
@@ -171,7 +171,7 @@ pub fn weighted_gauss_newton_update(
         let jacobian_i = jacobian(param, s);
         for (j, jacobian_ij) in jacobian_i.row_iter().enumerate() {
             let r_ij = r[j];
-            let w_ij = drho(r_ij * r_ij, huber_k);
+            let w_ij = drho(r_ij * r_ij, HUBER_K);
             let g = 1. / mads[j];
             jtr += w_ij * g * jacobian_ij.transpose() * r_ij;
             jtj += w_ij * g * jacobian_ij.transpose() * jacobian_ij;

@@ -113,8 +113,6 @@ fn main() {
 
         let mut cc = ChartBuilder::on(&root)
             .build_cartesian_2d(-WINDOW_RANGE..WINDOW_RANGE, -WINDOW_RANGE..WINDOW_RANGE).unwrap();
-        // cc.draw_series(src.iter().map(|p| { to_point(&p, &YELLOW) })).unwrap();
-        // cc.draw_series(dst.iter().map(|p| { to_point(&p, &GREEN) })).unwrap();
 
         let transform = estimate_transform(&src, &dst, &correspondence);
         cc.draw_series(dst.iter().map(|p| { to_point(&p, &RED) })).unwrap();
