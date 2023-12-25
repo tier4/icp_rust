@@ -1,5 +1,7 @@
 #![feature(stmt_expr_attributes)]
 
+use kdtree::distance::squared_euclidean;
+use kdtree::KdTree;
 use nalgebra::Cholesky;
 use nalgebra::{Matrix2, Matrix3, Vector2, Vector3};
 
@@ -61,6 +63,34 @@ pub fn exp_se2(param: &Param) -> Transform {
     )
 }
 
+fn make_kdtree(landmarks: &Vec<Measurement>) -> KdTree<f64, usize, [f64; 2]> {
+    let mut kdtree = KdTree::new(2);
+    for i in 0..landmarks.len() {
+        let array: [f64; 2] = landmarks[i].into();
+        kdtree.add(array, i).unwrap();
+    }
+    kdtree
+}
+
+fn associate(src: &Vec<Measurement>, dst: &Vec<Measurement>) -> Vec<(usize, usize)> {
+    // TODO not necessary to make kdtree for each iteration in ICP
+    let kdtree = make_kdtree(dst);
+
+    let mut correspondence = vec![];
+    for (query_index, query) in src.iter().enumerate() {
+        let (_distance, nearest_index) = match kdtree.nearest(query.into(), 1, &squared_euclidean) {
+            Ok(p) => p[0],
+            Err(e) => {
+                eprintln!("Error: {:?}", e);
+                continue;
+            }
+        };
+        correspondence.push((query_index, *nearest_index));
+        // let nearest = dst[*index];
+    }
+    correspondence
+}
+
 pub fn transform(param: &Param, landmark: &Measurement) -> Measurement {
     let (rot, t) = calc_rt(param);
     rot * landmark + t
@@ -118,6 +148,30 @@ pub fn estimate_transform(
 
         // TODO better to compute T <- T * exp_se2(delta), T in SE(2)
         param = param + delta;
+    }
+    param
+}
+
+pub fn icp(initial_param: &Param, src_mut: &mut Vec<Measurement>, dst: &Vec<Measurement>) -> Param {
+    let max_iter: usize = 3;
+    let mut param: Param = *initial_param;
+
+    for _ in 0..max_iter {
+        let correspondence = associate(&src_mut, &dst);
+
+        let src_points = correspondence
+            .iter()
+            .map(|(src_index, _)| src_mut[*src_index])
+            .collect::<Vec<_>>();
+        let dst_points = correspondence
+            .iter()
+            .map(|(_, dst_index)| dst[*dst_index])
+            .collect::<Vec<_>>();
+        param = estimate_transform(&param, &src_points, &dst_points);
+        *src_mut = src_mut
+            .iter()
+            .map(|sp| transform(&param, &sp))
+            .collect::<Vec<Measurement>>();
     }
     param
 }

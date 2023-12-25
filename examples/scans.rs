@@ -1,5 +1,3 @@
-use kdtree::distance::squared_euclidean;
-use kdtree::KdTree;
 use nalgebra::{Vector2, Vector3};
 use piston_window::{EventLoop, PistonWindow, WindowSettings};
 use plotters::drawing::IntoDrawingArea;
@@ -13,34 +11,6 @@ use std::io::BufRead;
 use std::path::Path;
 
 use icp;
-
-fn make_kdtree(landmarks: &Vec<icp::Measurement>) -> KdTree<f64, usize, [f64; 2]> {
-    let mut kdtree = KdTree::new(2);
-    for i in 0..landmarks.len() {
-        let array: [f64; 2] = landmarks[i].into();
-        kdtree.add(array, i).unwrap();
-    }
-    kdtree
-}
-
-fn associate(src: &Vec<icp::Measurement>, dst: &Vec<icp::Measurement>) -> Vec<(usize, usize)> {
-    // TODO not necessary to make kdtree for each iteration in ICP
-    let kdtree = make_kdtree(dst);
-
-    let mut correspondence = vec![];
-    for (query_index, query) in src.iter().enumerate() {
-        let (_distance, nearest_index) = match kdtree.nearest(query.into(), 1, &squared_euclidean) {
-            Ok(p) => p[0],
-            Err(e) => {
-                eprintln!("Error: {:?}", e);
-                continue;
-            }
-        };
-        correspondence.push((query_index, *nearest_index));
-        // let nearest = dst[*index];
-    }
-    correspondence
-}
 
 fn read_lines<P>(filename: P) -> std::io::Result<std::io::Lines<std::io::BufReader<File>>>
 where
@@ -154,19 +124,7 @@ fn main() {
 
         println!("initial error = {}", icp::huber_error(&param, &src, &dst));
 
-        for _ in 0..10 {
-            let correspondence = associate(&src, &dst);
-
-            // for (src_index, dst_index) in &correspondence {
-            //     let sp = src[*src_index];
-            //     let dp = dst[*dst_index];
-            //     let line = LineSeries::new(vec![(sp[0], sp[1]), (dp[0], dp[1])], RED);
-            //     cc.draw_series(line).unwrap();
-            // }
-
-            param = estimate_transform(&src, &dst, &correspondence, &Some(param));
-            src = src.iter().map(|sp| icp::transform(&param, sp)).collect();
-        }
+        param = icp::icp(&param, &mut src, &dst);
 
         println!("updated error = {}", icp::huber_error(&param, &src, &dst));
 
