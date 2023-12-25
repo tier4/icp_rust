@@ -16,9 +16,11 @@ type Hessian = nalgebra::Matrix3<f64>;
 const HUBER_K: f64 = 1.345;
 
 pub fn get_rt(transform: &Transform) -> (Rotation, Translation) {
+    #[rustfmt::skip]
     let rot = Rotation::new(
         transform[(0, 0)], transform[(0, 1)],
-        transform[(1, 0)], transform[(1, 1)]);
+        transform[(1, 0)], transform[(1, 1)],
+    );
     let t = Translation::new(transform[(0, 2)], transform[(1, 2)]);
     (rot, t)
 }
@@ -59,7 +61,7 @@ pub fn exp_se2(param: &Param) -> Transform {
     )
 }
 
-fn transform(param: &Param, landmark: &Measurement) -> Measurement {
+pub fn transform(param: &Param, landmark: &Measurement) -> Measurement {
     let (rot, t) = calc_rt(param);
     rot * landmark + t
 }
@@ -75,20 +77,46 @@ pub fn error(param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>) -> f
     })
 }
 
+pub fn huber_error(param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>) -> f64 {
+    src.iter().zip(dst.iter()).fold(0f64, |sum, (s, d)| {
+        let r = residual(param, s, d);
+        sum + rho(r.dot(&r), HUBER_K)
+    })
+}
+
 pub fn estimate_transform(
-        initial_param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>) -> Param {
-    let delta_norm_threshold: f64 = 1e-5;
+    initial_param: &Param,
+    src: &Vec<Measurement>,
+    dst: &Vec<Measurement>,
+) -> Param {
+    let delta_norm_threshold: f64 = 1e-6;
     let max_iter: usize = 200;
 
+    let mut prev_error: f64 = f64::MAX;
+
     let mut param = *initial_param;
-    for _ in 0..max_iter {
+    for i in 0..max_iter {
         let delta = match weighted_gauss_newton_update(&param, &src, &dst) {
             Some(d) => d,
             None => break,
         };
+        println!(
+            "iteration: {:5}, update = {:?}, error = {:.3}",
+            i,
+            delta,
+            error(&param, &src, &dst)
+        );
         if delta.norm_squared() < delta_norm_threshold {
             break;
         }
+
+        let error = huber_error(&param, src, dst);
+        if error > prev_error {
+            break;
+        }
+        prev_error = error;
+
+        // TODO better to compute T <- T * exp_se2(delta), T in SE(2)
         param = param + delta;
     }
     param
@@ -137,7 +165,11 @@ fn check_input_size(input: &Vec<Measurement>) -> bool {
     input.len() > 0 && input.len() >= input[0].len()
 }
 
-pub fn gauss_newton_update(param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>) -> Option<Param> {
+pub fn gauss_newton_update(
+    param: &Param,
+    src: &Vec<Measurement>,
+    dst: &Vec<Measurement>,
+) -> Option<Param> {
     if !check_input_size(&src) {
         // The input does not have sufficient samples to estimate the update
         return None;
@@ -322,10 +354,7 @@ mod tests {
             0.6225093, 0.7826124,
             -0.7826124, 0.6225093,
         );
-        let expected_t = Translation::new(
-            -0.32440305,
-             -0.01307704,
-        );
+        let expected_t = Translation::new(-0.32440305, -0.01307704);
 
         assert_eq!(rot, expected_rot);
         assert_eq!(t, expected_t);
@@ -416,10 +445,7 @@ mod tests {
             Measurement::new(-8.89304516, 0.54202289),
             Measurement::new(-4.03198385, -2.81807802),
         ];
-        let dst = vec![
-            transform(&param, &src[0]),
-            transform(&param, &src[1])
-        ];
+        let dst = vec![transform(&param, &src[0]), transform(&param, &src[1])];
         assert!(gauss_newton_update(&param, &src, &dst).is_some());
     }
 
@@ -520,10 +546,7 @@ mod tests {
             Measurement::new(-8.89304516, 0.54202289),
             Measurement::new(-4.03198385, -2.81807802),
         ];
-        let dst = vec![
-            transform(&param, &src[0]),
-            transform(&param, &src[1])
-        ];
+        let dst = vec![transform(&param, &src[0]), transform(&param, &src[1])];
         assert!(weighted_gauss_newton_update(&param, &src, &dst).is_some());
     }
 
