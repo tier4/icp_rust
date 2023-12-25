@@ -72,10 +72,7 @@ fn make_kdtree(landmarks: &Vec<Measurement>) -> KdTree<f64, usize, [f64; 2]> {
     kdtree
 }
 
-fn associate(src: &Vec<Measurement>, dst: &Vec<Measurement>) -> Vec<(usize, usize)> {
-    // TODO not necessary to make kdtree for each iteration in ICP
-    let kdtree = make_kdtree(dst);
-
+fn associate(kdtree: &KdTree<f64, usize, [f64; 2]>, src: &Vec<Measurement>) -> Vec<(usize, usize)> {
     let mut correspondence = vec![];
     for (query_index, query) in src.iter().enumerate() {
         let (_distance, nearest_index) = match kdtree.nearest(query.into(), 1, &squared_euclidean) {
@@ -86,7 +83,6 @@ fn associate(src: &Vec<Measurement>, dst: &Vec<Measurement>) -> Vec<(usize, usiz
             }
         };
         correspondence.push((query_index, *nearest_index));
-        // let nearest = dst[*index];
     }
     correspondence
 }
@@ -156,8 +152,9 @@ pub fn icp(initial_param: &Param, src_mut: &mut Vec<Measurement>, dst: &Vec<Meas
     let max_iter: usize = 3;
     let mut param: Param = *initial_param;
 
+    let kdtree = make_kdtree(dst);
     for _ in 0..max_iter {
-        let correspondence = associate(&src_mut, &dst);
+        let correspondence = associate(&kdtree, &src_mut);
 
         let src_points = correspondence
             .iter()
