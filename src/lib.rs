@@ -52,6 +52,16 @@ pub fn calc_rt(param: &Param) -> (Rotation, Translation) {
     (rot, t)
 }
 
+pub fn exp_so2(theta: f64) -> Matrix2<f64> {
+    let cos = f64::cos(theta);
+    let sin = f64::sin(theta);
+    #[rustfmt::skip]
+    Matrix2::new(
+        cos, -sin,
+        sin, cos
+    )
+}
+
 pub fn exp_se2(param: &Param) -> Transform {
     let (rot, t) = calc_rt(param);
 
@@ -126,15 +136,12 @@ pub fn estimate_transform(
             Some(d) => d,
             None => break,
         };
-        println!(
-            "iteration: {:5}, update = {:?}, error = {:.3}",
-            i,
-            delta,
-            error(&param, &src, &dst)
-        );
-        if delta.norm_squared() < delta_norm_threshold {
-            break;
-        }
+        // println!("param = {:?}", param);
+        // println!("delta = {:?}", delta);
+        // println!("iteration: {:5}, error = {:>8.8}", i, huber_error(&param, &src, &dst));
+        // if delta.norm_squared() < delta_norm_threshold {
+        //     break;
+        // }
 
         let error = huber_error(&param, src, dst);
         if error > prev_error {
@@ -148,27 +155,69 @@ pub fn estimate_transform(
     param
 }
 
-pub fn icp(initial_param: &Param, src_mut: &mut Vec<Measurement>, dst: &Vec<Measurement>) -> Param {
-    let max_iter: usize = 3;
-    let mut param: Param = *initial_param;
+fn log_so2(rotation: Matrix2<f64>) -> f64 {
+    f64::atan2(rotation[(1, 0)], rotation[(0, 0)])
+}
 
+fn log_se2(transform: &Transform) -> Param {
+    let (rot, t) = get_rt(transform);
+    let theta = log_so2(rot);
+    let v_inv = if theta == 0. {
+        Matrix2::identity()
+    } else if theta == std::f64::consts::PI {
+        #[rustfmt::skip]
+        Matrix2::new(
+            0., 0.5 * theta,
+            -0.5 * theta, 0.
+        )
+    } else {
+        let k = f64::sin(theta) / (1. - f64::cos(theta));
+
+        #[rustfmt::skip]
+        let m = Matrix2::new(
+            k, 1.,
+            -1., k
+        );
+        0.5 * theta * m
+    };
+    let u = v_inv * t;
+    Param::new(u[0], u[1], theta)
+}
+
+fn get_corresponding_points(
+    correspondence: &Vec<(usize, usize)>,
+    src: &Vec<Measurement>,
+    dst: &Vec<Measurement>,
+) -> (Vec<Measurement>, Vec<Measurement>) {
+    let src_points = correspondence
+        .iter()
+        .map(|(src_index, _)| src[*src_index])
+        .collect::<Vec<_>>();
+    let dst_points = correspondence
+        .iter()
+        .map(|(_, dst_index)| dst[*dst_index])
+        .collect::<Vec<_>>();
+    (src_points, dst_points)
+}
+
+pub fn icp(initial_param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>) -> Param {
     let kdtree = make_kdtree(dst);
-    for _ in 0..max_iter {
-        let correspondence = associate(&kdtree, &src_mut);
+    let max_iter: usize = 500;
 
-        let src_points = correspondence
-            .iter()
-            .map(|(src_index, _)| src_mut[*src_index])
-            .collect::<Vec<_>>();
-        let dst_points = correspondence
-            .iter()
-            .map(|(_, dst_index)| dst[*dst_index])
-            .collect::<Vec<_>>();
-        param = estimate_transform(&param, &src_points, &dst_points);
-        *src_mut = src_mut
+    let mut param: Param = *initial_param;
+    let mut src_mut = src.iter().map(|p| *p).collect::<Vec<Measurement>>();
+    for _ in 0..max_iter {
+        let src_tranformed = src
             .iter()
             .map(|sp| transform(&param, &sp))
             .collect::<Vec<Measurement>>();
+        let correspondence = associate(&kdtree, &src_tranformed);
+        let (sp, dp) = get_corresponding_points(&correspondence, &src_tranformed, dst);
+        // for (s, d) in src_points.iter().zip(dst_points.iter()) {
+        //     println!("s = {:?}, d = {:?}", s, d);
+        // }
+        let dparam = estimate_transform(&Param::zeros(), &sp, &dp);
+        param = dparam + param;
     }
     param
 }
@@ -241,17 +290,17 @@ pub fn gauss_newton_update(
     Some(-update)
 }
 
-fn calc_mads(residuals: &Vec<Measurement>) -> Option<Vec<f64>> {
+fn calc_stddevs(residuals: &Vec<Measurement>) -> Option<Vec<f64>> {
     let dimension = residuals[0].len();
-    let mut mads = vec![0f64; dimension];
+    let mut stddevs = vec![0f64; dimension];
     for j in 0..dimension {
         let jth_dim = residuals.iter().map(|r| r[j]).collect::<Vec<_>>();
-        mads[j] = match mad(&jth_dim) {
+        stddevs[j] = match median::standard_deviation(&jth_dim) {
             Some(s) => s,
             None => return None,
         };
     }
-    Some(mads)
+    Some(stddevs)
 }
 
 pub fn weighted_gauss_newton_update(
@@ -272,7 +321,7 @@ pub fn weighted_gauss_newton_update(
         .map(|(s, d)| residual(param, s, d))
         .collect::<Vec<_>>();
 
-    let mads = match calc_mads(&residuals) {
+    let stddevs = match calc_stddevs(&residuals) {
         Some(m) => m,
         None => return None,
     };
@@ -280,18 +329,32 @@ pub fn weighted_gauss_newton_update(
     let mut jtr = Param::zeros();
     let mut jtj = Hessian::zeros();
     for (s, r) in src.iter().zip(residuals.iter()) {
+        // println!("param = {:?}", param);
         let jacobian_i = jacobian(param, s);
         for (j, jacobian_ij) in jacobian_i.row_iter().enumerate() {
+            if stddevs[j] == 0. {
+                continue;
+            }
+            let g = 1. / stddevs[j];
             let r_ij = r[j];
             let w_ij = drho(r_ij * r_ij, HUBER_K);
-            let g = 1. / mads[j];
+
+            // println!("jacobian_ij = {}", jacobian_ij);
+            // println!("w_ij = {}", w_ij);
+            // println!("g = {}", g);
             jtr += w_ij * g * jacobian_ij.transpose() * r_ij;
             jtj += w_ij * g * jacobian_ij.transpose() * jacobian_ij;
         }
     }
 
-    // TODO Check matrix rank before solving linear equation
+    if jtj.rank(1.0e-7) < param.nrows() {
+        return None;
+    }
+
     let update = Cholesky::new_unchecked(jtj).solve(&jtr);
+    // println!("jtj = {}", jtj);
+    // println!("jtr = {}", jtr);
+    // println!("update = {}", update);
     Some(-update)
 }
 
@@ -317,18 +380,21 @@ fn drho(e: f64, k: f64) -> f64 {
     }
 }
 
-fn mad(input: &Vec<f64>) -> Option<f64> {
-    let m = match median::median(&input) {
-        None => return None,
-        Some(m) => m,
-    };
-    let a = input.iter().map(|e| (e - m).abs()).collect::<Vec<f64>>();
-    return median::median(&a);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_exp_so2() {
+        let theta = 0.3;
+        let rot = exp_so2(theta);
+        assert_eq!(rot.nrows(), 2);
+        assert_eq!(rot.ncols(), 2);
+        assert_eq!(rot[(0, 0)], f64::cos(theta));
+        assert_eq!(rot[(0, 1)], -f64::sin(theta));
+        assert_eq!(rot[(1, 0)], f64::sin(theta));
+        assert_eq!(rot[(1, 1)], f64::cos(theta));
+    }
 
     #[test]
     fn test_exp_se2() {
@@ -388,6 +454,83 @@ mod tests {
             0., 0., 1.,
         );
         assert!((transform - expected).norm() < 1e-6);
+    }
+
+    #[test]
+    fn test_log_so2() {
+        let theta = 0.3 * std::f64::consts::PI;
+        let rot = exp_so2(theta);
+        assert!((log_so2(rot) - theta).abs() < 1e-6);
+
+        let theta = 0.8 * std::f64::consts::PI;
+        let rot = exp_so2(theta);
+        assert!((log_so2(rot) - theta).abs() < 1e-6);
+
+        let theta = -0.7 * std::f64::consts::PI;
+        let rot = exp_so2(theta);
+        assert!((log_so2(rot) - theta).abs() < 1e-6);
+
+        let theta = -0.1 * std::f64::consts::PI;
+        let rot = exp_so2(theta);
+        assert!((log_so2(rot) - theta).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_log_se2() {
+        // >>> def skew_se2(v):
+        // ...     return np.array([
+        // ...         [0, -v[2], v[0]],
+        // ...         [v[2], 0, v[1]],
+        // ...         [0, 0, 0]])
+        // ...
+        // >>> a = np.random.uniform(-3, 3, 3)
+        // >>> a
+        // array([ 2.89271776,  0.34275002, -1.6427056 ])
+        // >>> expm(skew_se2(a))
+        // array([[-7.18473159e-02,  9.97415642e-01,  1.98003686e+00],
+        //        [-9.97415642e-01, -7.18473159e-02, -1.67935601e+00],
+        //        [ 0.00000000e+00,  1.11022302e-16,  1.00000000e+00]])
+
+        #[rustfmt::skip]
+        let transform = Matrix3::new(
+            -7.18473159e-02,  9.97415642e-01,  1.98003686e+00,
+            -9.97415642e-01, -7.18473159e-02, -1.67935601e+00,
+             0.00000000e+00,  1.11022302e-16,  1.00000000e+00
+        );
+        let expected = Param::new(2.89271776, 0.34275002, -1.6427056);
+        let param = log_se2(&transform);
+        assert!((param - expected).norm() < 1e-6);
+
+        // >>> a = np.array([-1., 3., np.pi])
+        // >>> expm(skew_se2(a))
+        // array([[-1.00000000e+00, -1.52695104e-16, -1.90985932e+00],
+        //        [ 1.52695104e-16, -1.00000000e+00, -6.36619772e-01],
+        //        [ 0.00000000e+00,  0.00000000e+00,  1.00000000e+00]])
+
+        #[rustfmt::skip]
+        let transform = Matrix3::new(
+            -1.00000000e+00, 0.00000000e+00, -1.90985932e+00,
+            0.00000000e+00, -1.00000000e+00, -6.36619772e-01,
+            0.00000000e+00,  0.00000000e+00,  1.00000000e+00
+        );
+        let expected = Param::new(-1., 3., std::f64::consts::PI);
+        let param = log_se2(&transform);
+        assert!((param - expected).norm() < 1e-6);
+
+        // >>> a = np.array([-1., 3., 0.])
+        // >>> expm(skew_se2(a))
+        // array([[ 1.,  0., -1.],
+        //        [ 0.,  1.,  3.],
+        //        [ 0.,  0.,  1.]])
+        #[rustfmt::skip]
+        let transform = Matrix3::new(
+            1.,  0., -1.,
+            0.,  1.,  3.,
+            0.,  0.,  1.
+        );
+        let expected = Param::new(-1., 3., 0.);
+        let param = log_se2(&transform);
+        assert!((param - expected).norm() < 1e-6);
     }
 
     #[test]
@@ -570,35 +713,73 @@ mod tests {
     }
 
     #[test]
-    fn test_mad() {
-        let a = vec![16., -16., -1., 8., -9., 4., -3., 17., 3., -7., 11., -1.];
-        assert_eq!(mad(&a), Some(7.5));
-
-        let a = vec![22., 1., -9., -35., -29., -40., -50., -45., 4.];
-        assert_eq!(mad(&a), Some(20.0));
-
-        let a = vec![-53., -36.];
-        assert_eq!(mad(&a), Some(8.5));
-    }
-
-    #[test]
     fn test_weighted_gauss_newton_update_input_size() {
         let param = Param::new(10.0, 30.0, -0.15);
 
+        // insufficient input size
         let src = vec![];
         let dst = vec![];
         assert!(weighted_gauss_newton_update(&param, &src, &dst).is_none());
 
+        // insufficient input size
         let src = vec![Measurement::new(-8.89304516, 0.54202289)];
         let dst = vec![transform(&param, &src[0])];
         assert!(weighted_gauss_newton_update(&param, &src, &dst).is_none());
 
+        // insufficient input size
         let src = vec![
             Measurement::new(-8.89304516, 0.54202289),
             Measurement::new(-4.03198385, -2.81807802),
         ];
         let dst = vec![transform(&param, &src[0]), transform(&param, &src[1])];
-        assert!(weighted_gauss_newton_update(&param, &src, &dst).is_some());
+        assert!(weighted_gauss_newton_update(&param, &src, &dst).is_none());
+
+        // sufficient input size but rank is insufficient
+        let src = vec![
+            Measurement::new(-8.89304516, 0.54202289),
+            Measurement::new(-4.03198385, -2.81807802),
+            Measurement::new(-4.03198385, -2.81807802),
+        ];
+        let dst = vec![
+            transform(&param, &src[0]),
+            transform(&param, &src[1]),
+            transform(&param, &src[2]),
+        ];
+        assert!(weighted_gauss_newton_update(&param, &src, &dst).is_none());
+
+        // sufficient input size but rank is insufficient
+        let src = vec![
+            Measurement::new(-8.89304516, 0.54202289),
+            Measurement::new(-4.03198385, -2.81807802),
+            Measurement::new(4.40356349, -9.43358563),
+        ];
+        let dst = vec![
+            transform(&param, &src[0]),
+            transform(&param, &src[1]),
+            transform(&param, &src[2]),
+        ];
+        assert!(weighted_gauss_newton_update(&param, &src, &dst).is_none());
+    }
+
+    #[test]
+    fn test_weighted_gauss_newton_update_zero_x_diff() {
+        let src = vec![
+            Measurement::new(0.0, 0.0),
+            Measurement::new(0.0, 0.1),
+            Measurement::new(0.0, 0.2),
+            Measurement::new(0.0, 0.3),
+            Measurement::new(0.0, 0.4),
+            Measurement::new(0.0, 0.5),
+        ];
+
+        let param_true = Param::new(0.00, 0.00, 0.00);
+
+        let dst = src
+            .iter()
+            .map(|p| transform(&param_true, p))
+            .collect::<Vec<Measurement>>();
+
+        assert!(weighted_gauss_newton_update(&param_true, &src, &dst).is_some());
     }
 
     #[test]
@@ -675,8 +856,6 @@ mod tests {
 
         let e0 = error(&initial_param, &src, &dst);
         let e1 = error(&updated_param, &src, &dst);
-        println!("e0 = {}", e0);
-        println!("e1 = {}", e1);
         assert!(e1 < e0 * 0.001);
     }
 
@@ -697,8 +876,58 @@ mod tests {
 
         assert_eq!(src.len(), correspondence.len());
 
-        for (src_index, dst_index) in correspondence {
-            assert_eq!(src[src_index], dst[dst_index]);
+        let (sp, dp) = get_corresponding_points(&correspondence, &src, &dst);
+
+        for (s, d) in sp.iter().zip(dp.iter()) {
+            assert_eq!(s, d);
         }
+    }
+
+    #[test]
+    fn test_icp() {
+        let src = vec![
+            Measurement::new(0.0, 0.0),
+            Measurement::new(0.0, 0.1),
+            Measurement::new(0.0, 0.2),
+            Measurement::new(0.0, 0.3),
+            Measurement::new(0.0, 0.4),
+            Measurement::new(0.0, 0.5),
+            Measurement::new(0.0, 0.6),
+            Measurement::new(0.0, 0.7),
+            Measurement::new(0.0, 0.8),
+            Measurement::new(0.0, 0.9),
+            Measurement::new(0.0, 1.0),
+            Measurement::new(0.1, 0.0),
+            Measurement::new(0.2, 0.0),
+            Measurement::new(0.3, 0.0),
+            Measurement::new(0.4, 0.0),
+            Measurement::new(0.5, 0.0),
+            Measurement::new(0.6, 0.0),
+            Measurement::new(0.7, 0.0),
+            Measurement::new(0.8, 0.0),
+            Measurement::new(0.9, 0.0),
+            Measurement::new(1.0, 0.0),
+        ];
+
+        let param_true = Param::new(0.01, 0.01, -0.00);
+
+        let dst = src
+            .iter()
+            .map(|p| transform(&param_true, p))
+            .collect::<Vec<Measurement>>();
+
+        for dp in &dst {
+            println!("dp = {:?}", dp);
+        }
+
+        let diff = Param::new(0.000, 0.010, 0.010);
+        let initial_param = param_true + diff;
+        let param_pred = icp(&initial_param, &src, &dst);
+        println!("true error = {}", huber_error(&param_true, &src, &dst));
+        println!("pred error = {}", huber_error(&param_pred, &src, &dst));
+        println!("param_true = {:?}", param_true);
+        println!("param_pred = {:?}", param_pred);
+
+        assert!((param_pred - param_true).norm() < 1e-4);
     }
 }

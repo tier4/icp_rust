@@ -68,10 +68,10 @@ fn axis_lines(
     length: f64,
 ) -> (Vector2<f64>, Vector2<f64>, Vector2<f64>) {
     // Vec<LineSeries<PistonBackend, (f64, f64)>> {
-    let x = Vector2::new(length, 0.);
-    let y = Vector2::new(0., length);
 
     let (rot, t) = icp::get_rt(transform);
+    let x = Vector2::new(length, 0.);
+    let y = Vector2::new(0., length);
 
     let xp = rot * x + t;
     let yp = rot * y + t;
@@ -91,12 +91,12 @@ fn main() {
     let mut src = vec![];
     let mut index = 0;
 
-    let mut param = icp::Param::zeros();
+    let mut transform = icp::Transform::identity();
 
     let mut path: Vec<Vector2<f64>> = vec![];
     let mut draw = |b: PistonBackend| -> Result<(), Box<dyn std::error::Error>> {
-        let filename = format!("scan/{}.txt", index);
         index += 1;
+        let filename = format!("scan/{}.txt", index);
 
         let lines = match read_lines(filename) {
             Ok(lines) => lines,
@@ -106,13 +106,8 @@ fn main() {
             }
         };
 
-        let dst = load_scan(lines);
-        if src.len() == 0 {
-            src = dst;
-            return Ok(());
-        }
-
-        if dst.len() == 0 {
+        if index == 1 {
+            src = load_scan(lines);
             return Ok(());
         }
 
@@ -122,42 +117,26 @@ fn main() {
             .build_cartesian_2d(-WINDOW_RANGE..WINDOW_RANGE, -WINDOW_RANGE..WINDOW_RANGE)
             .unwrap();
 
-        println!("initial error = {}", icp::huber_error(&param, &src, &dst));
+        let dst = load_scan(lines);
 
-        param = icp::icp(&param, &mut src, &dst);
+        let param = icp::icp(&icp::Param::zeros(), &src, &dst);
 
-        println!("updated error = {}", icp::huber_error(&param, &src, &dst));
+        transform = icp::exp_se2(&param) * transform;
 
-        let transform = icp::exp_se2(&param);
-
-        // cc.draw_series(dst.iter().map(|p| { to_point(&p, &GREEN) })).unwrap();
-        cc.draw_series(src.iter().map(|p| to_point(&p, &BLUE)))
+        let inv_transform = icp::inverse_3x3(&transform).unwrap();
+        let (t, xp, yp) = axis_lines(&inv_transform, 200.);
+        cc.draw_series(LineSeries::new(vec![(t[0], t[1]), (xp[0], xp[1])], RED))
             .unwrap();
-        // cc.draw_series(src.iter().map(|p| {
-        //     let dp = dtransform * Vector3::new(p[0], p[1], 1.);
-        //     to_point(&Vector2::new(dp[0], dp[1]), &GREEN)
-        // })).unwrap();
-
-        let inv_transform = icp::exp_se2(&(-param));
-
-        cc.draw_series(dst.iter().map(|dp| {
-            let sp = inv_transform * Vector3::new(dp[0], dp[1], 1.);
-            to_point(&Vector2::new(sp[0], sp[1]), &GREEN)
-        }))
-        .unwrap();
-
-        // let (t, xp, yp) = axis_lines(&inv_transform, 100.);
-        // cc.draw_series(LineSeries::new(vec![(t[0], t[1]), (xp[0], xp[1])], RED)).unwrap();
-        // cc.draw_series(LineSeries::new(vec![(t[0], t[1]), (yp[0], yp[1])], BLUE)).unwrap();
-
+        cc.draw_series(LineSeries::new(vec![(t[0], t[1]), (yp[0], yp[1])], BLUE))
+            .unwrap();
         path.push(Vector2::new(inv_transform[(0, 2)], inv_transform[(1, 2)]));
 
-        // for i in 0..(path.len()-1) {
-        //     let p0 = path[i+0];
-        //     let p1 = path[i+1];
-        //     let line = LineSeries::new(vec![(p0[0], p0[1]), (p1[0], p1[1])], GREEN);
-        //     cc.draw_series(line).unwrap();
-        // }
+        for i in 0..(path.len() - 1) {
+            let p0 = path[i + 0];
+            let p1 = path[i + 1];
+            let line = LineSeries::new(vec![(p0[0], p0[1]), (p1[0], p1[1])], GREEN);
+            cc.draw_series(line).unwrap();
+        }
 
         src = dst;
         Ok(())

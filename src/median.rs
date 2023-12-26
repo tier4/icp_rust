@@ -140,11 +140,10 @@ mod tests {
             51.36323355, 39.08440872, 53.04656841, 54.82787657, 46.40165516,
             25.48827449, 56.49926944, 42.0958349 , 33.46258109, 43.5237575 ];
 
-        let expected = 9.427146244705945; // calced by numpy.std
+        let expected = 9.427146244705945; // calculated by numpy.std
 
         match standard_deviation(&normal) {
             Some(stddev) => {
-                println!("stddev = {}", stddev);
                 assert!((stddev - expected).abs() < 0.5);
             }
             None => panic!(),
