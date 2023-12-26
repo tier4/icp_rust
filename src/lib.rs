@@ -679,4 +679,26 @@ mod tests {
         println!("e1 = {}", e1);
         assert!(e1 < e0 * 0.001);
     }
+
+    #[test]
+    fn test_association() {
+        let src = vec![
+            Measurement::new(-8.30289767, 8.47750876),
+            Measurement::new(-6.45751825, -1.34801312),
+            Measurement::new(-8.66777369, -9.77914636),
+            Measurement::new(-8.36130159, -2.39500161),
+            Measurement::new(-9.64529718, -7.23686057),
+        ];
+
+        let dst = vec![src[3], src[2], src[0], src[1], src[4]];
+
+        let kdtree = make_kdtree(&dst);
+        let correspondence = associate(&kdtree, &src);
+
+        assert_eq!(src.len(), correspondence.len());
+
+        for (src_index, dst_index) in correspondence {
+            assert_eq!(src[src_index], dst[dst_index]);
+        }
+    }
 }
