@@ -2,8 +2,9 @@
 #![feature(test)]
 extern crate test;
 
-use kdtree::distance::squared_euclidean;
-use kdtree::KdTree;
+use kiddo::float::distance::SquaredEuclidean;
+use kiddo::float::kdtree::KdTree;
+
 use nalgebra::Cholesky;
 use nalgebra::{Matrix2, Matrix3, Vector2, Vector3};
 use std::time::Instant;
@@ -17,6 +18,8 @@ pub type Translation = Vector2<f64>;
 pub type Measurement = nalgebra::Vector2<f64>;
 type Jacobian = nalgebra::Matrix2x3<f64>;
 type Hessian = nalgebra::Matrix3<f64>;
+
+type Tree = KdTree<f64, usize, 2, 64, u32>;
 
 const HUBER_K: f64 = 1.345;
 
@@ -76,26 +79,21 @@ pub fn exp_se2(param: &Param) -> Transform {
     )
 }
 
-fn make_kdtree(landmarks: &Vec<Measurement>) -> KdTree<f64, usize, [f64; 2]> {
-    let mut kdtree = KdTree::new(2);
-    for i in 0..landmarks.len() {
-        let array: [f64; 2] = landmarks[i].into();
-        kdtree.add(array, i).unwrap();
-    }
+fn make_kdtree(landmarks: &Vec<Measurement>) -> Tree {
+    let mut kdtree: Tree = KdTree::with_capacity(landmarks.len());
+    landmarks.iter().enumerate().for_each(|(i, landmark)| {
+        let array: [f64; 2] = (*landmark).into();
+        kdtree.add(&array, i);
+    });
     kdtree
 }
 
-fn associate(kdtree: &KdTree<f64, usize, [f64; 2]>, src: &Vec<Measurement>) -> Vec<(usize, usize)> {
+fn associate(kdtree: &Tree, src: &Vec<Measurement>) -> Vec<(usize, usize)> {
     let mut correspondence = vec![];
     for (query_index, query) in src.iter().enumerate() {
-        let (_distance, nearest_index) = match kdtree.nearest(query.into(), 1, &squared_euclidean) {
-            Ok(p) => p[0],
-            Err(e) => {
-                eprintln!("Error: {:?}", e);
-                continue;
-            }
-        };
-        correspondence.push((query_index, *nearest_index));
+        let p: [f64; 2] = (*query).into();
+        let nearest = kdtree.nearest_one::<SquaredEuclidean>(&p);
+        correspondence.push((query_index, nearest.item));
     }
     correspondence
 }
@@ -203,9 +201,11 @@ fn get_corresponding_points(
 
 pub fn icp(initial_param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>) -> Param {
     let kdtree = make_kdtree(dst);
-    let max_iter: usize = 500;
+    let max_iter: usize = 20;
 
     let mut param: Param = *initial_param;
+    let t1 = Instant::now();
+    // let t2 = Instant::now();
     for _ in 0..max_iter {
         let src_tranformed = src
             .iter()
@@ -214,9 +214,18 @@ pub fn icp(initial_param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>
 
         let correspondence = associate(&kdtree, &src_tranformed);
 
+        // println!("t2 = {:.4?}", t2.elapsed());
+        // let t3 = Instant::now();
+
         let (sp, dp) = get_corresponding_points(&correspondence, &src_tranformed, dst);
 
+        // println!("t3 = {:.4?}", t3.elapsed());
+        // let t4 = Instant::now();
+
         let dparam = estimate_transform(&Param::zeros(), &sp, &dp);
+
+        // println!("t4 = {:.4?}", t4.elapsed());
+        // println!("");
 
         param = dparam + param;
     }
@@ -319,24 +328,16 @@ pub fn weighted_gauss_newton_update(
         return None;
     }
 
-    // let t1 = Instant::now();
-
     let residuals = src
         .iter()
         .zip(dst.iter())
         .map(|(s, d)| residual(param, s, d))
         .collect::<Vec<_>>();
 
-    // println!("t1 = {:.4?}", t1.elapsed());
-    // let t2 = Instant::now();
-
     let stddevs = match calc_stddevs(&residuals) {
         Some(m) => m,
         None => return None,
     };
-
-    // println!("t2 = {:.4?}", t2.elapsed());
-    // let t3 = Instant::now();
 
     let mut jtr = Param::zeros();
     let mut jtj = Hessian::zeros();
@@ -355,13 +356,8 @@ pub fn weighted_gauss_newton_update(
         }
     }
 
-    // println!("t3 = {:.4?}", t3.elapsed());
-    // let t4 = Instant::now();
-
     match inverse_3x3(&jtj) {
         Some(jtj_inv) => {
-            // println!("t4 = {:.4?}", t4.elapsed());
-            // println!("\n");
             return Some(-jtj_inv * jtr);
         }
         None => return None,
