@@ -11,6 +11,8 @@ use std::time::Instant;
 
 pub mod se2;
 pub mod so2;
+
+mod huber;
 mod stats;
 
 pub type Param = nalgebra::Vector3<f64>;
@@ -63,7 +65,7 @@ pub fn error(param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>) -> f
 pub fn huber_error(param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>) -> f64 {
     src.iter().zip(dst.iter()).fold(0f64, |sum, (s, d)| {
         let r = residual(param, s, d);
-        sum + rho(r.dot(&r), HUBER_K)
+        sum + huber::rho(r.dot(&r), HUBER_K)
     })
 }
 
@@ -253,7 +255,7 @@ pub fn weighted_gauss_newton_update(
             }
             let g = 1. / stddevs[j];
             let r_ij = r[j];
-            let w_ij = drho(r_ij * r_ij, HUBER_K);
+            let w_ij = huber::drho(r_ij * r_ij, HUBER_K);
 
             jtr += w_ij * g * jacobian_ij.transpose() * r_ij;
             jtj += w_ij * g * jacobian_ij.transpose() * jacobian_ij;
@@ -265,28 +267,6 @@ pub fn weighted_gauss_newton_update(
             return Some(-jtj_inv * jtr);
         }
         None => return None,
-    }
-}
-
-fn rho(e: f64, k: f64) -> f64 {
-    debug_assert!(e >= 0.);
-    debug_assert!(k >= 0.);
-    let k_squared = k * k;
-    if e <= k_squared {
-        e
-    } else {
-        2. * k * e.sqrt() - k_squared
-    }
-}
-
-fn drho(e: f64, k: f64) -> f64 {
-    debug_assert!(e >= 0.);
-    debug_assert!(k >= 0.);
-    let k_squared = k * k;
-    if e <= k_squared {
-        1.
-    } else {
-        k / e.sqrt()
     }
 }
 
@@ -410,46 +390,6 @@ mod tests {
         let e0 = error(&initial_param, &src, &dst);
         let e1 = error(&updated_param, &src, &dst);
         assert!(e1 < e0 * 0.01);
-    }
-
-    #[test]
-    fn test_rho() {
-        assert_eq!(rho(0.1 * 0.1, 0.1), 0.1 * 0.1);
-        assert_eq!(rho(0.101 * 0.101, 0.1), 2. * 0.1 * 0.101 - 0.1 * 0.1);
-        assert_eq!(rho(0.09 * 0.09, 0.1), 0.09 * 0.09);
-    }
-
-    #[test]
-    fn test_drho() {
-        let e1 = (4.000_f64 + 0.001_f64).powi(2);
-        let e0 = 4.000_f64.powi(2);
-        let k = 4.0_f64;
-        let expected = (rho(e1, k) - rho(e0, k)) / (e1 - e0);
-        assert!((drho(e0, k) - expected).abs() < 1e-3);
-
-        let e1 = (0.10_f64 + 0.01_f64).powi(2);
-        let e0 = 0.10_f64.powi(2);
-        let k = 4.0_f64;
-        let expected = (rho(e1, k) - rho(e0, k)) / (e1 - e0);
-        assert_eq!(expected, drho(e0, k));
-
-        let e1 = (0.10_f64 + 0.0001_f64).powi(2);
-        let e0 = 0.10_f64.powi(2);
-        let k = 0.10_f64;
-        let expected = (rho(e1, k) - rho(e0, k)) / (e1 - e0);
-        assert!((drho(e0, k) - expected).abs() < 1e-3);
-
-        let e1 = (5.000_f64 + 0.001_f64).powi(2);
-        let e0 = 5.000_f64.powi(2);
-        let k = 4.0_f64;
-        let expected = (rho(e1, k) - rho(e0, k)) / (e1 - e0);
-        assert!((drho(e0, k) - expected).abs() < 1e-3);
-
-        let e1 = (10.000_f64 + 0.001_f64).powi(2);
-        let e0 = 10.000_f64.powi(2);
-        let k = 4.0_f64;
-        let expected = (rho(e1, k) - rho(e0, k)) / (e1 - e0);
-        assert!((drho(e0, k) - expected).abs() < 1e-3);
     }
 
     #[test]
