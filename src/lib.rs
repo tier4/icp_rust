@@ -9,7 +9,7 @@ use nalgebra::Cholesky;
 use nalgebra::{Matrix2, Matrix3, Vector2, Vector3};
 use std::time::Instant;
 
-mod median;
+mod stats;
 
 pub type Param = nalgebra::Vector3<f64>;
 pub type Transform = nalgebra::Matrix3<f64>;
@@ -293,7 +293,7 @@ fn calc_stddevs(residuals: &Vec<Measurement>) -> Option<Vec<f64>> {
     let mut stddevs = vec![0f64; dimension];
     for j in 0..dimension {
         let mut jth_dim = residuals.iter().map(|r| r[j]).collect::<Vec<_>>();
-        let stddev = median::mutable_standard_deviation(&mut jth_dim);
+        let stddev = stats::mutable_standard_deviation(&mut jth_dim);
 
         stddevs[j] = match stddev {
             Some(s) => s,
