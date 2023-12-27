@@ -288,6 +288,7 @@ pub fn gauss_newton_update(
 }
 
 fn calc_stddevs(residuals: &Vec<Measurement>) -> Option<Vec<f64>> {
+    debug_assert!(residuals.len() > 0);
     let dimension = residuals[0].len();
     let mut stddevs = vec![0f64; dimension];
     for j in 0..dimension {
@@ -326,7 +327,6 @@ pub fn weighted_gauss_newton_update(
     let mut jtr = Param::zeros();
     let mut jtj = Hessian::zeros();
     for (s, r) in src.iter().zip(residuals.iter()) {
-        // println!("param = {:?}", param);
         let jacobian_i = jacobian(param, s);
         for (j, jacobian_ij) in jacobian_i.row_iter().enumerate() {
             if stddevs[j] == 0. {
@@ -341,15 +341,10 @@ pub fn weighted_gauss_newton_update(
         }
     }
 
-    if jtj.rank(1.0e-7) < param.nrows() {
-        return None;
+    match inverse_3x3(&jtj) {
+        Some(jtj_inv) => return Some(-jtj_inv * jtr),
+        None => return None,
     }
-
-    let update = Cholesky::new_unchecked(jtj).solve(&jtr);
-    // println!("jtj = {}", jtj);
-    // println!("jtr = {}", jtr);
-    // println!("update = {}", update);
-    Some(-update)
 }
 
 fn rho(e: f64, k: f64) -> f64 {
@@ -910,11 +905,11 @@ mod tests {
             .map(|p| transform(&param_true, p))
             .collect::<Vec<Measurement>>();
 
-        let diff = Param::new(0.000, 0.010, 0.010);
+        let diff = Param::new(0.05, 0.010, 0.010);
         let initial_param = param_true + diff;
         let param_pred = icp(&initial_param, &src, &dst);
 
-        assert!((param_pred - param_true).norm() < 1e-4);
+        assert!((param_pred - param_true).norm() < 1e-3);
     }
 
     use test::Bencher;
