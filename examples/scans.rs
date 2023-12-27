@@ -1,9 +1,7 @@
 use nalgebra::Vector2;
 use piston_window::{EventLoop, PistonWindow, WindowSettings};
 use plotters::drawing::IntoDrawingArea;
-use plotters::prelude::{
-    ChartBuilder, Circle, LineSeries, RGBColor, BLUE, GREEN, RED, WHITE, YELLOW,
-};
+use plotters::prelude::{ChartBuilder, Circle, LineSeries, RGBColor, BLUE, GREEN, RED, WHITE};
 use plotters::style::Color;
 use plotters_piston::{draw_piston_window, PistonBackend};
 use std::fs::File;
@@ -104,7 +102,7 @@ fn main() {
             .unwrap();
         cc.draw_series(dst.iter().map(|p| {
             let b = icp::transform(&(-param), &p);
-            to_point(&b, &YELLOW)
+            to_point(&b, &GREEN)
         }))
         .unwrap();
 

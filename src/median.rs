@@ -3,7 +3,7 @@ use num_traits::Num;
 use std::cmp::PartialOrd;
 use std::marker::Copy;
 
-pub fn median(input: &Vec<f64>) -> Option<f64> {
+pub fn mutable_median(input: &mut Vec<f64>) -> Option<f64> {
     let cmp = |a: &f64, b: &f64| a.partial_cmp(b).unwrap();
 
     let n = input.len();
@@ -11,33 +11,31 @@ pub fn median(input: &Vec<f64>) -> Option<f64> {
         return None;
     }
     if n % 2 == 1 {
-        let mut copied = input.to_vec();
-        copied.select_nth_unstable_by(n / 2, cmp);
-        return Some(copied[n / 2]);
+        input.select_nth_unstable_by(n / 2, cmp);
+        return Some(input[n / 2]);
     }
 
-    let mut copied = input.to_vec();
-    copied.select_nth_unstable_by(n / 2 - 1, cmp);
-    copied.select_nth_unstable_by(n / 2 - 0, cmp);
-    let b: f64 = copied[n / 2 - 1];
-    let c: f64 = copied[n / 2 - 0];
+    input.select_nth_unstable_by(n / 2 - 1, cmp);
+    input.select_nth_unstable_by(n / 2 - 0, cmp);
+    let b: f64 = input[n / 2 - 1];
+    let c: f64 = input[n / 2 - 0];
     Some((b + c) / 2.)
 }
 
-fn mad(input: &Vec<f64>) -> Option<f64> {
-    let m = match median(&input) {
+fn mutable_mad(input: &mut Vec<f64>) -> Option<f64> {
+    let m = match mutable_median(input) {
         None => return None,
         Some(m) => m,
     };
-    let a = input.iter().map(|e| (e - m).abs()).collect::<Vec<f64>>();
-    return median(&a);
+    let mut a = input.iter().map(|e| (e - m).abs()).collect::<Vec<f64>>();
+    return mutable_median(&mut a);
 }
 
-pub fn standard_deviation(input: &Vec<f64>) -> Option<f64> {
+pub fn mutable_standard_deviation(input: &mut Vec<f64>) -> Option<f64> {
     // 1.0 / PPF(0.75)
     // PPF is normal distribution's percent point function
     let ppf34 = 1.482602218505602;
-    match mad(&input) {
+    match mutable_mad(input) {
         None => return None,
         Some(m) => return Some(ppf34 * m),
     }
@@ -48,46 +46,46 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_median() {
-        let input = vec![-9., -6., -4., -1., -6., 5., 8., 5., 5., 4.];
-        assert_eq!(median(&input), Some(1.5));
+    fn test_mutable_median() {
+        let mut input = vec![-9., -6., -4., -1., -6., 5., 8., 5., 5., 4.];
+        assert_eq!(mutable_median(&mut input), Some(1.5));
 
-        let input = vec![
+        let mut input = vec![
             15., 34., 26., -76., -19., 25., 93., -99., -52., 12., 6., -70., 59., 78., 69., -6.,
             -33., 2., -27.,
         ];
-        assert_eq!(median(&input), Some(6.0));
+        assert_eq!(mutable_median(&mut input), Some(6.0));
 
-        let input = vec![-19., 38., -45., 35., 36., 68., 26., -27., 52., 41.];
-        assert_eq!(median(&input), Some(35.5));
+        let mut input = vec![-19., 38., -45., 35., 36., 68., 26., -27., 52., 41.];
+        assert_eq!(mutable_median(&mut input), Some(35.5));
 
-        let input: Vec<f64> = vec![];
-        assert_eq!(median(&input), None);
+        let mut input: Vec<f64> = vec![];
+        assert_eq!(mutable_median(&mut input), None);
 
-        let input = vec![50.];
-        assert_eq!(median(&input), Some(50.));
+        let mut input = vec![50.];
+        assert_eq!(mutable_median(&mut input), Some(50.));
 
-        let input = vec![10., 11.];
-        assert_eq!(median(&input), Some(10.5));
+        let mut input = vec![10., 11.];
+        assert_eq!(mutable_median(&mut input), Some(10.5));
     }
 
     #[test]
-    fn test_mad() {
-        let a = vec![16., -16., -1., 8., -9., 4., -3., 17., 3., -7., 11., -1.];
-        assert_eq!(mad(&a), Some(7.5));
+    fn test_mutable_mad() {
+        let mut a = vec![16., -16., -1., 8., -9., 4., -3., 17., 3., -7., 11., -1.];
+        assert_eq!(mutable_mad(&mut a), Some(7.5));
 
-        let a = vec![22., 1., -9., -35., -29., -40., -50., -45., 4.];
-        assert_eq!(mad(&a), Some(20.0));
+        let mut a = vec![22., 1., -9., -35., -29., -40., -50., -45., 4.];
+        assert_eq!(mutable_mad(&mut a), Some(20.0));
 
-        let a = vec![-53., -36.];
-        assert_eq!(mad(&a), Some(8.5));
+        let mut a = vec![-53., -36.];
+        assert_eq!(mutable_mad(&mut a), Some(8.5));
     }
 
     #[test]
-    fn test_standard_deviation() {
+    fn test_mutable_standard_deviation() {
         // >>> np.random.normal(50., 10., 100)
         #[rustfmt::skip]
-        let normal = vec![
+        let mut normal = vec![
             53.0832203 , 60.78675339, 49.15066951, 60.1084452 , 72.01118924,
             50.04284213, 52.83008308, 23.96785563, 35.51235652, 43.34002764,
             46.38651612, 44.12070351, 44.17867909, 50.98783254, 44.21536288,
@@ -111,7 +109,7 @@ mod tests {
 
         let expected = 9.427146244705945; // calculated by numpy.std
 
-        match standard_deviation(&normal) {
+        match mutable_standard_deviation(&mut normal) {
             Some(stddev) => {
                 assert!((stddev - expected).abs() < 0.5);
             }

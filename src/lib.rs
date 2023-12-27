@@ -211,9 +211,13 @@ pub fn icp(initial_param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>
             .iter()
             .map(|sp| transform(&param, &sp))
             .collect::<Vec<Measurement>>();
+
         let correspondence = associate(&kdtree, &src_tranformed);
+
         let (sp, dp) = get_corresponding_points(&correspondence, &src_tranformed, dst);
+
         let dparam = estimate_transform(&Param::zeros(), &sp, &dp);
+
         param = dparam + param;
     }
     param
@@ -292,13 +296,8 @@ fn calc_stddevs(residuals: &Vec<Measurement>) -> Option<Vec<f64>> {
     let dimension = residuals[0].nrows();
     let mut stddevs = vec![0f64; dimension];
     for j in 0..dimension {
-        let t1 = Instant::now();
-        let jth_dim = residuals.iter().map(|r| r[j]).collect::<Vec<_>>();
-        println!("residual = {:.4?}", t1.elapsed());
-
-        let t2 = Instant::now();
-        let stddev = median::standard_deviation(&jth_dim);
-        println!("stddev   = {:.4?}", t2.elapsed());
+        let mut jth_dim = residuals.iter().map(|r| r[j]).collect::<Vec<_>>();
+        let stddev = median::mutable_standard_deviation(&mut jth_dim);
 
         stddevs[j] = match stddev {
             Some(s) => s,
@@ -320,16 +319,24 @@ pub fn weighted_gauss_newton_update(
         return None;
     }
 
+    // let t1 = Instant::now();
+
     let residuals = src
         .iter()
         .zip(dst.iter())
         .map(|(s, d)| residual(param, s, d))
         .collect::<Vec<_>>();
 
+    // println!("t1 = {:.4?}", t1.elapsed());
+    // let t2 = Instant::now();
+
     let stddevs = match calc_stddevs(&residuals) {
         Some(m) => m,
         None => return None,
     };
+
+    // println!("t2 = {:.4?}", t2.elapsed());
+    // let t3 = Instant::now();
 
     let mut jtr = Param::zeros();
     let mut jtj = Hessian::zeros();
@@ -348,8 +355,15 @@ pub fn weighted_gauss_newton_update(
         }
     }
 
+    // println!("t3 = {:.4?}", t3.elapsed());
+    // let t4 = Instant::now();
+
     match inverse_3x3(&jtj) {
-        Some(jtj_inv) => return Some(-jtj_inv * jtr),
+        Some(jtj_inv) => {
+            // println!("t4 = {:.4?}", t4.elapsed());
+            // println!("\n");
+            return Some(-jtj_inv * jtr);
+        }
         None => return None,
     }
 }
