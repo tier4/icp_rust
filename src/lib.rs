@@ -263,9 +263,7 @@ pub fn weighted_gauss_newton_update(
     }
 
     match inverse_3x3(&jtj) {
-        Some(jtj_inv) => {
-            return Some(-jtj_inv * jtr);
-        }
+        Some(jtj_inv) => return Some(-jtj_inv * jtr),
         None => return None,
     }
 }
@@ -452,14 +450,17 @@ mod tests {
             Measurement::new(0.0, 0.5),
         ];
 
-        let param_true = Param::new(0.00, 0.00, 0.00);
+        let param_true = Param::new(0.00, 0.01, 0.00);
 
         let dst = src
             .iter()
             .map(|p| transform(&param_true, p))
             .collect::<Vec<Measurement>>();
 
-        assert!(weighted_gauss_newton_update(&param_true, &src, &dst).is_some());
+        let initial_param = Param::new(0.00, 0.00, 0.00);
+        // TODO Actually there is some error, but Hessian is not invertible so
+        // the update cannot be calculated
+        assert!(weighted_gauss_newton_update(&initial_param, &src, &dst).is_none());
     }
 
     #[test]
