@@ -1,9 +1,12 @@
 #![feature(stmt_expr_attributes)]
+#![feature(test)]
+extern crate test;
 
 use kdtree::distance::squared_euclidean;
 use kdtree::KdTree;
 use nalgebra::Cholesky;
 use nalgebra::{Matrix2, Matrix3, Vector2, Vector3};
+use std::time::Instant;
 
 mod median;
 
@@ -136,9 +139,7 @@ pub fn estimate_transform(
             Some(d) => d,
             None => break,
         };
-        // println!("param = {:?}", param);
-        // println!("delta = {:?}", delta);
-        // println!("iteration: {:5}, error = {:>8.8}", i, huber_error(&param, &src, &dst));
+
         if delta.norm_squared() < delta_norm_threshold {
             break;
         }
@@ -335,16 +336,12 @@ pub fn weighted_gauss_newton_update(
             let r_ij = r[j];
             let w_ij = drho(r_ij * r_ij, HUBER_K);
 
-            // println!("jacobian_ij = {}", jacobian_ij);
-            // println!("w_ij = {}", w_ij);
-            // println!("g = {}", g);
             jtr += w_ij * g * jacobian_ij.transpose() * r_ij;
             jtj += w_ij * g * jacobian_ij.transpose() * jacobian_ij;
         }
     }
 
     if jtj.rank(1.0e-7) < param.nrows() {
-        println!("insufficient rank");
         return None;
     }
 
@@ -916,11 +913,112 @@ mod tests {
         let diff = Param::new(0.000, 0.010, 0.010);
         let initial_param = param_true + diff;
         let param_pred = icp(&initial_param, &src, &dst);
-        println!("true error = {}", huber_error(&param_true, &src, &dst));
-        println!("pred error = {}", huber_error(&param_pred, &src, &dst));
-        println!("param_true = {:?}", param_true);
-        println!("param_pred = {:?}", param_pred);
 
         assert!((param_pred - param_true).norm() < 1e-4);
+    }
+
+    use test::Bencher;
+
+    #[bench]
+    fn bench_gauss_newton_update(b: &mut Bencher) {
+        let true_param = Param::new(10.0, 30.0, -0.15);
+        let dparam = Param::new(0.3, -0.5, 0.001);
+        let initial_param = true_param + dparam;
+
+        let src = vec![
+            Measurement::new(-8.89304516, 0.54202289),
+            Measurement::new(-4.03198385, -2.81807802),
+            Measurement::new(-5.9267953, 9.62339266),
+            Measurement::new(-4.04966218, -4.44595403),
+            Measurement::new(-2.8636942, -9.13843999),
+            Measurement::new(-6.97749644, -8.90180581),
+            Measurement::new(-9.66454985, 6.32282424),
+            Measurement::new(7.02264007, -0.88684585),
+            Measurement::new(4.1970011, -1.42366424),
+            // Measurement::new(-1.98903219, -0.96437383),  // corresponing to the large noise
+            Measurement::new(-0.68034875, -0.48699014),
+            Measurement::new(1.89645382, 1.861194),
+            Measurement::new(7.09550743, 2.18289525),
+            Measurement::new(-7.95383118, -5.16650913),
+            Measurement::new(-5.40235599, 2.70675665),
+            Measurement::new(-5.38909696, -5.48180288),
+            Measurement::new(-9.00498232, -5.12191142),
+            Measurement::new(-8.54899319, -3.25752055),
+            Measurement::new(6.89969814, 3.53276123),
+            Measurement::new(5.06875729, -0.2891854),
+        ];
+
+        // noise follows the normal distribution of
+        // mean 0.0 and standard deviation 0.01
+        let noise = [
+            Measurement::new(0.0105879, 0.01302535),
+            Measurement::new(0.01392508, 0.0083586),
+            Measurement::new(0.01113885, -0.00693269),
+            Measurement::new(0.01673124, -0.01735564),
+            Measurement::new(-0.01219263, 0.00080933),
+            Measurement::new(-0.00396817, 0.00111582),
+            Measurement::new(-0.00444043, 0.00658505),
+            Measurement::new(-0.01576271, -0.00701065),
+            Measurement::new(0.00464, -0.0040679),
+            // Measurement::new(-0.32268585, 0.49653010), // but add much larger noise here
+            Measurement::new(0.00269374, -0.00787015),
+            Measurement::new(-0.00494243, 0.00350137),
+            Measurement::new(0.00343766, -0.00039311),
+            Measurement::new(0.00661565, -0.00341112),
+            Measurement::new(-0.00936695, -0.00673899),
+            Measurement::new(-0.00240039, -0.00314409),
+            Measurement::new(-0.01434128, -0.0058539),
+            Measurement::new(0.00874225, 0.00295633),
+            Measurement::new(0.00736213, -0.00328875),
+            Measurement::new(0.00585082, -0.01232619),
+        ];
+
+        assert_eq!(src.len(), noise.len());
+        let dst = src
+            .iter()
+            .zip(noise.iter())
+            .map(|(p, n)| transform(&true_param, p) + n)
+            .collect::<Vec<_>>();
+
+        b.iter(|| weighted_gauss_newton_update(&initial_param, &src, &dst));
+    }
+
+    #[bench]
+    fn bench_icp(b: &mut Bencher) {
+        let src = vec![
+            Measurement::new(0.0, 0.0),
+            Measurement::new(0.0, 0.1),
+            Measurement::new(0.0, 0.2),
+            Measurement::new(0.0, 0.3),
+            Measurement::new(0.0, 0.4),
+            Measurement::new(0.0, 0.5),
+            Measurement::new(0.0, 0.6),
+            Measurement::new(0.0, 0.7),
+            Measurement::new(0.0, 0.8),
+            Measurement::new(0.0, 0.9),
+            Measurement::new(0.0, 1.0),
+            Measurement::new(0.1, 0.0),
+            Measurement::new(0.2, 0.0),
+            Measurement::new(0.3, 0.0),
+            Measurement::new(0.4, 0.0),
+            Measurement::new(0.5, 0.0),
+            Measurement::new(0.6, 0.0),
+            Measurement::new(0.7, 0.0),
+            Measurement::new(0.8, 0.0),
+            Measurement::new(0.9, 0.0),
+            Measurement::new(1.0, 0.0),
+        ];
+
+        let param_true = Param::new(0.01, 0.01, -0.02);
+
+        let dst = src
+            .iter()
+            .map(|p| transform(&param_true, p))
+            .collect::<Vec<Measurement>>();
+
+        let diff = Param::new(0.000, 0.010, 0.010);
+        let initial_param = param_true + diff;
+
+        b.iter(|| icp(&initial_param, &src, &dst));
     }
 }
