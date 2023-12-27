@@ -106,7 +106,7 @@ fn main() {
         }))
         .unwrap();
 
-        let inv_transform = icp::se2::exp_se2(&(-param));
+        let inv_transform = icp::se2::exp(&(-param));
         let (t, xp, yp) = axis_lines(&inv_transform, 200.);
         cc.draw_series(LineSeries::new(vec![(t[0], t[1]), (xp[0], xp[1])], RED))
             .unwrap();

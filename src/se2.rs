@@ -37,7 +37,7 @@ pub fn calc_rt(param: &Vector3<f64>) -> (Matrix2<f64>, Vector2<f64>) {
     (rot, t)
 }
 
-pub fn exp_se2(param: &Vector3<f64>) -> Matrix3<f64> {
+pub fn exp(param: &Vector3<f64>) -> Matrix3<f64> {
     let (rot, t) = calc_rt(param);
 
     #[rustfmt::skip]
@@ -48,9 +48,9 @@ pub fn exp_se2(param: &Vector3<f64>) -> Matrix3<f64> {
     )
 }
 
-pub fn log_se2(transform: &Matrix3<f64>) -> Vector3<f64> {
+pub fn log(transform: &Matrix3<f64>) -> Vector3<f64> {
     let (rot, t) = get_rt(transform);
-    let theta = so2::log_so2(rot);
+    let theta = so2::log(rot);
     let v_inv = if theta == 0. {
         Matrix2::identity()
     } else if theta == std::f64::consts::PI {
@@ -78,7 +78,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_exp_se2() {
+    fn test_exp() {
         // In python,
         // >>> import numpy as np
         // >>> from scipy.linalg import expm
@@ -94,7 +94,7 @@ mod tests {
         //        [-0.7826124 ,  0.6225093 , -0.01307704],
         //        [ 0.        ,  0.        ,  1.        ]])
 
-        let transform = exp_se2(&Vector3::new(-0.29638466, -0.15797957, -0.89885138));
+        let transform = exp(&Vector3::new(-0.29638466, -0.15797957, -0.89885138));
 
         #[rustfmt::skip]
         let expected = Matrix3::new(
@@ -110,7 +110,7 @@ mod tests {
         //        [ 0.78982617,  0.61333076,  0.72824049],
         //        [ 0.        ,  0.        ,  1.        ]])
 
-        let transform = exp_se2(&Vector3::new(-0.24295876, 0.95847196, 0.91052553));
+        let transform = exp(&Vector3::new(-0.24295876, 0.95847196, 0.91052553));
 
         #[rustfmt::skip]
         let expected = Matrix3::new(
@@ -126,7 +126,7 @@ mod tests {
         //        [  0.,   1., -20.],
         //        [  0.,   0.,   1.]])
 
-        let transform = exp_se2(&Vector3::new(10., -20., 0.));
+        let transform = exp(&Vector3::new(10., -20., 0.));
 
         #[rustfmt::skip]
         let expected = Matrix3::new(
@@ -138,7 +138,7 @@ mod tests {
     }
 
     #[test]
-    fn test_log_se2() {
+    fn test_log() {
         // >>> def skew_se2(v):
         // ...     return np.array([
         // ...         [0, -v[2], v[0]],
@@ -160,7 +160,7 @@ mod tests {
              0.00000000e+00,  1.11022302e-16,  1.00000000e+00
         );
         let expected = Vector3::new(2.89271776, 0.34275002, -1.6427056);
-        let param = log_se2(&transform);
+        let param = log(&transform);
         assert!((param - expected).norm() < 1e-6);
 
         // >>> a = np.array([-1., 3., np.pi])
@@ -176,7 +176,7 @@ mod tests {
             0.00000000e+00,  0.00000000e+00,  1.00000000e+00
         );
         let expected = Vector3::new(-1., 3., std::f64::consts::PI);
-        let param = log_se2(&transform);
+        let param = log(&transform);
         assert!((param - expected).norm() < 1e-6);
 
         // >>> a = np.array([-1., 3., 0.])
@@ -191,7 +191,7 @@ mod tests {
             0.,  0.,  1.
         );
         let expected = Vector3::new(-1., 3., 0.);
-        let param = log_se2(&transform);
+        let param = log(&transform);
         assert!((param - expected).norm() < 1e-6);
     }
 
