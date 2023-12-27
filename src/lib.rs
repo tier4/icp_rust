@@ -289,11 +289,18 @@ pub fn gauss_newton_update(
 
 fn calc_stddevs(residuals: &Vec<Measurement>) -> Option<Vec<f64>> {
     debug_assert!(residuals.len() > 0);
-    let dimension = residuals[0].len();
+    let dimension = residuals[0].nrows();
     let mut stddevs = vec![0f64; dimension];
     for j in 0..dimension {
+        let t1 = Instant::now();
         let jth_dim = residuals.iter().map(|r| r[j]).collect::<Vec<_>>();
-        stddevs[j] = match median::standard_deviation(&jth_dim) {
+        println!("residual = {:.4?}", t1.elapsed());
+
+        let t2 = Instant::now();
+        let stddev = median::standard_deviation(&jth_dim);
+        println!("stddev   = {:.4?}", t2.elapsed());
+
+        stddevs[j] = match stddev {
             Some(s) => s,
             None => return None,
         };
@@ -846,6 +853,51 @@ mod tests {
         let e0 = error(&initial_param, &src, &dst);
         let e1 = error(&updated_param, &src, &dst);
         assert!(e1 < e0 * 0.001);
+    }
+
+    #[test]
+    fn test_calc_stddevs() {
+        #[rustfmt::skip]
+        let measurements = vec![
+            Measurement::new(53.72201757, 52.99126564),
+            Measurement::new(47.10884813, 53.59975516),
+            Measurement::new(39.39661665, 61.08762518),
+            Measurement::new(62.81692917, 54.56765183),
+            Measurement::new(39.26208329, 45.65102341),
+            Measurement::new(50.86473295, 44.72763481),
+            Measurement::new(39.28791948, 34.88506328),
+            Measurement::new(55.25576933, 39.59323902),
+            Measurement::new(36.75721579, 57.17795218),
+            Measurement::new(30.13909168, 64.76416708),
+            Measurement::new(44.81493956, 54.94041174),
+            Measurement::new(53.88324537, 60.4374775 ),
+            Measurement::new(47.88396982, 66.59441293),
+            Measurement::new(64.42865488, 40.9932948 ),
+            Measurement::new(44.81265264, 50.45413795),
+            Measurement::new(53.19558104, 28.24225202),
+            Measurement::new(55.95984582, 65.33672375),
+            Measurement::new(59.05920996, 27.61279324),
+            Measurement::new(46.8073715 , 30.79477285),
+            Measurement::new(39.59866249, 45.6226116 ),
+            Measurement::new(49.15739909, 55.53557656),
+            Measurement::new(43.24838042, 43.95231977),
+            Measurement::new(54.78299967, 40.5593425 ),
+            Measurement::new(41.9153867 , 55.54639181),
+            Measurement::new(52.18015184, 46.38912455),
+            Measurement::new(29.59992903, 46.32180761),
+            Measurement::new(75.51275641, 57.73265648),
+            Measurement::new(61.78180837, 54.48655747),
+            Measurement::new(72.17828583, 66.37805296),
+            Measurement::new(41.72995451, 50.9864875 )
+        ];
+        let stddevs = match calc_stddevs(&measurements) {
+            Some(stddevs) => stddevs,
+            None => panic!(),
+        };
+
+        // compare to stddevs calced by numpy
+        assert!((stddevs[0] - 10.88547151).abs() < 1.0);
+        assert!((stddevs[1] - 10.75361579).abs() < 1.0);
     }
 
     #[test]
