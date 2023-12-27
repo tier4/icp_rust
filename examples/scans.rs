@@ -46,7 +46,7 @@ fn axis_lines(
 ) -> (Vector2<f64>, Vector2<f64>, Vector2<f64>) {
     // Vec<LineSeries<PistonBackend, (f64, f64)>> {
 
-    let (rot, t) = icp::get_rt(transform);
+    let (rot, t) = icp::se2::get_rt(transform);
     let x = Vector2::new(length, 0.);
     let y = Vector2::new(0., length);
 
@@ -106,7 +106,7 @@ fn main() {
         }))
         .unwrap();
 
-        let inv_transform = icp::exp_se2(&(-param));
+        let inv_transform = icp::se2::exp_se2(&(-param));
         let (t, xp, yp) = axis_lines(&inv_transform, 200.);
         cc.draw_series(LineSeries::new(vec![(t[0], t[1]), (xp[0], xp[1])], RED))
             .unwrap();

@@ -9,6 +9,8 @@ use nalgebra::Cholesky;
 use nalgebra::{Matrix2, Matrix3, Vector2, Vector3};
 use std::time::Instant;
 
+pub mod se2;
+pub mod so2;
 mod stats;
 
 pub type Param = nalgebra::Vector3<f64>;
@@ -22,62 +24,6 @@ type Hessian = nalgebra::Matrix3<f64>;
 type Tree = KdTree<f64, usize, 2, 64, u32>;
 
 const HUBER_K: f64 = 1.345;
-
-pub fn get_rt(transform: &Transform) -> (Rotation, Translation) {
-    #[rustfmt::skip]
-    let rot = Rotation::new(
-        transform[(0, 0)], transform[(0, 1)],
-        transform[(1, 0)], transform[(1, 1)],
-    );
-    let t = Translation::new(transform[(0, 2)], transform[(1, 2)]);
-    (rot, t)
-}
-
-pub fn calc_rt(param: &Param) -> (Rotation, Translation) {
-    let theta = param[2];
-    let cos = f64::cos(theta);
-    let sin = f64::sin(theta);
-
-    #[rustfmt::skip]
-    let rot = Matrix2::new(
-        cos, -sin,
-        sin, cos,
-    );
-
-    let vx = param[0];
-    let vy = param[1];
-
-    let t = if theta == 0. {
-        Vector2::new(vx, vy)
-    } else {
-        Vector2::new(
-            (sin * vx - (1. - cos) * vy) / theta,
-            ((1. - cos) * vx + sin * vy) / theta,
-        )
-    };
-    (rot, t)
-}
-
-pub fn exp_so2(theta: f64) -> Matrix2<f64> {
-    let cos = f64::cos(theta);
-    let sin = f64::sin(theta);
-    #[rustfmt::skip]
-    Matrix2::new(
-        cos, -sin,
-        sin, cos
-    )
-}
-
-pub fn exp_se2(param: &Param) -> Transform {
-    let (rot, t) = calc_rt(param);
-
-    #[rustfmt::skip]
-    Matrix3::new(
-        rot[(0, 0)], rot[(0, 1)], t[0],
-        rot[(1, 0)], rot[(1, 1)], t[1],
-        0., 0., 1.,
-    )
-}
 
 fn make_kdtree(landmarks: &Vec<Measurement>) -> Tree {
     let mut kdtree: Tree = KdTree::with_capacity(landmarks.len());
@@ -99,7 +45,7 @@ fn associate(kdtree: &Tree, src: &Vec<Measurement>) -> Vec<(usize, usize)> {
 }
 
 pub fn transform(param: &Param, landmark: &Measurement) -> Measurement {
-    let (rot, t) = calc_rt(param);
+    let (rot, t) = se2::calc_rt(param);
     rot * landmark + t
 }
 
@@ -152,35 +98,6 @@ pub fn estimate_transform(
         param = param + delta;
     }
     param
-}
-
-fn log_so2(rotation: Matrix2<f64>) -> f64 {
-    f64::atan2(rotation[(1, 0)], rotation[(0, 0)])
-}
-
-fn log_se2(transform: &Transform) -> Param {
-    let (rot, t) = get_rt(transform);
-    let theta = log_so2(rot);
-    let v_inv = if theta == 0. {
-        Matrix2::identity()
-    } else if theta == std::f64::consts::PI {
-        #[rustfmt::skip]
-        Matrix2::new(
-            0., 0.5 * theta,
-            -0.5 * theta, 0.
-        )
-    } else {
-        let k = f64::sin(theta) / (1. - f64::cos(theta));
-
-        #[rustfmt::skip]
-        let m = Matrix2::new(
-            k, 1.,
-            -1., k
-        );
-        0.5 * theta * m
-    };
-    let u = v_inv * t;
-    Param::new(u[0], u[1], theta)
 }
 
 fn get_corresponding_points(
@@ -249,7 +166,7 @@ pub fn inverse_3x3(matrix: &Matrix3<f64>) -> Option<Matrix3<f64>> {
 
 fn jacobian(param: &Param, landmark: &Measurement) -> Jacobian {
     let a = Vector2::new(-landmark[1], landmark[0]);
-    let (rot, _t) = calc_rt(param);
+    let (rot, _t) = se2::calc_rt(param);
     let b = rot * a;
     #[rustfmt::skip]
     Jacobian::new(
@@ -376,176 +293,6 @@ fn drho(e: f64, k: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_exp_so2() {
-        let theta = 0.3;
-        let rot = exp_so2(theta);
-        assert_eq!(rot.nrows(), 2);
-        assert_eq!(rot.ncols(), 2);
-        assert_eq!(rot[(0, 0)], f64::cos(theta));
-        assert_eq!(rot[(0, 1)], -f64::sin(theta));
-        assert_eq!(rot[(1, 0)], f64::sin(theta));
-        assert_eq!(rot[(1, 1)], f64::cos(theta));
-    }
-
-    #[test]
-    fn test_exp_se2() {
-        // In python,
-        // >>> import numpy as np
-        // >>> from scipy.linalg import expm
-        // >>> def skew_se2(v):
-        // ...     return np.array([
-        // ...         [0, -v[2], v[0]],
-        // ...         [v[2], 0, v[1]],
-        // ...         [0, 0, 0]])
-        // ...
-        // >>> a = np.array([-0.29638466, -0.15797957, -0.89885138])
-        // >>> expm(skew_se2(a))
-        // array([[ 0.6225093 ,  0.7826124 , -0.32440305],
-        //        [-0.7826124 ,  0.6225093 , -0.01307704],
-        //        [ 0.        ,  0.        ,  1.        ]])
-
-        let transform = exp_se2(&Vector3::new(-0.29638466, -0.15797957, -0.89885138));
-
-        #[rustfmt::skip]
-        let expected = Matrix3::new(
-            0.6225093, 0.7826124, -0.32440305,
-            -0.7826124, 0.6225093, -0.01307704,
-            0., 0., 1.,
-        );
-        assert!((transform - expected).norm() < 1e-6);
-
-        // >>> a = np.array([-0.24295876,  0.95847196,  0.91052553])
-        // >>> expm(skew_se2(a))
-        // array([[ 0.61333076, -0.78982617, -0.61778258],
-        //        [ 0.78982617,  0.61333076,  0.72824049],
-        //        [ 0.        ,  0.        ,  1.        ]])
-
-        let transform = exp_se2(&Vector3::new(-0.24295876, 0.95847196, 0.91052553));
-
-        #[rustfmt::skip]
-        let expected = Matrix3::new(
-            0.61333076, -0.78982617, -0.61778258,
-            0.78982617, 0.61333076, 0.72824049,
-            0., 0., 1.,
-        );
-        assert!((transform - expected).norm() < 1e-6);
-
-        // >>> a = np.array([10., -20., 0.])
-        // >>> expm(skew_se2(a))
-        // array([[  1.,   0.,  10.],
-        //        [  0.,   1., -20.],
-        //        [  0.,   0.,   1.]])
-
-        let transform = exp_se2(&Vector3::new(10., -20., 0.));
-
-        #[rustfmt::skip]
-        let expected = Matrix3::new(
-            1., 0., 10.,
-            0., 1., -20.,
-            0., 0., 1.,
-        );
-        assert!((transform - expected).norm() < 1e-6);
-    }
-
-    #[test]
-    fn test_log_so2() {
-        let theta = 0.3 * std::f64::consts::PI;
-        let rot = exp_so2(theta);
-        assert!((log_so2(rot) - theta).abs() < 1e-6);
-
-        let theta = 0.8 * std::f64::consts::PI;
-        let rot = exp_so2(theta);
-        assert!((log_so2(rot) - theta).abs() < 1e-6);
-
-        let theta = -0.7 * std::f64::consts::PI;
-        let rot = exp_so2(theta);
-        assert!((log_so2(rot) - theta).abs() < 1e-6);
-
-        let theta = -0.1 * std::f64::consts::PI;
-        let rot = exp_so2(theta);
-        assert!((log_so2(rot) - theta).abs() < 1e-6);
-    }
-
-    #[test]
-    fn test_log_se2() {
-        // >>> def skew_se2(v):
-        // ...     return np.array([
-        // ...         [0, -v[2], v[0]],
-        // ...         [v[2], 0, v[1]],
-        // ...         [0, 0, 0]])
-        // ...
-        // >>> a = np.random.uniform(-3, 3, 3)
-        // >>> a
-        // array([ 2.89271776,  0.34275002, -1.6427056 ])
-        // >>> expm(skew_se2(a))
-        // array([[-7.18473159e-02,  9.97415642e-01,  1.98003686e+00],
-        //        [-9.97415642e-01, -7.18473159e-02, -1.67935601e+00],
-        //        [ 0.00000000e+00,  1.11022302e-16,  1.00000000e+00]])
-
-        #[rustfmt::skip]
-        let transform = Matrix3::new(
-            -7.18473159e-02,  9.97415642e-01,  1.98003686e+00,
-            -9.97415642e-01, -7.18473159e-02, -1.67935601e+00,
-             0.00000000e+00,  1.11022302e-16,  1.00000000e+00
-        );
-        let expected = Param::new(2.89271776, 0.34275002, -1.6427056);
-        let param = log_se2(&transform);
-        assert!((param - expected).norm() < 1e-6);
-
-        // >>> a = np.array([-1., 3., np.pi])
-        // >>> expm(skew_se2(a))
-        // array([[-1.00000000e+00, -1.52695104e-16, -1.90985932e+00],
-        //        [ 1.52695104e-16, -1.00000000e+00, -6.36619772e-01],
-        //        [ 0.00000000e+00,  0.00000000e+00,  1.00000000e+00]])
-
-        #[rustfmt::skip]
-        let transform = Matrix3::new(
-            -1.00000000e+00, 0.00000000e+00, -1.90985932e+00,
-            0.00000000e+00, -1.00000000e+00, -6.36619772e-01,
-            0.00000000e+00,  0.00000000e+00,  1.00000000e+00
-        );
-        let expected = Param::new(-1., 3., std::f64::consts::PI);
-        let param = log_se2(&transform);
-        assert!((param - expected).norm() < 1e-6);
-
-        // >>> a = np.array([-1., 3., 0.])
-        // >>> expm(skew_se2(a))
-        // array([[ 1.,  0., -1.],
-        //        [ 0.,  1.,  3.],
-        //        [ 0.,  0.,  1.]])
-        #[rustfmt::skip]
-        let transform = Matrix3::new(
-            1.,  0., -1.,
-            0.,  1.,  3.,
-            0.,  0.,  1.
-        );
-        let expected = Param::new(-1., 3., 0.);
-        let param = log_se2(&transform);
-        assert!((param - expected).norm() < 1e-6);
-    }
-
-    #[test]
-    fn test_get_rt() {
-        #[rustfmt::skip]
-        let transform = Transform::new(
-            0.6225093, 0.7826124, -0.32440305,
-            -0.7826124, 0.6225093, -0.01307704,
-            0., 0., 1.,
-        );
-        let (rot, t) = get_rt(&transform);
-
-        #[rustfmt::skip]
-        let expected_rot = Rotation::new(
-            0.6225093, 0.7826124,
-            -0.7826124, 0.6225093,
-        );
-        let expected_t = Translation::new(-0.32440305, -0.01307704);
-
-        assert_eq!(rot, expected_rot);
-        assert_eq!(t, expected_t);
-    }
 
     #[test]
     fn test_residual() {
