@@ -204,8 +204,6 @@ pub fn icp(initial_param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>
     let max_iter: usize = 20;
 
     let mut param: Param = *initial_param;
-    let t1 = Instant::now();
-    // let t2 = Instant::now();
     for _ in 0..max_iter {
         let src_tranformed = src
             .iter()
@@ -213,19 +211,8 @@ pub fn icp(initial_param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>
             .collect::<Vec<Measurement>>();
 
         let correspondence = associate(&kdtree, &src_tranformed);
-
-        // println!("t2 = {:.4?}", t2.elapsed());
-        // let t3 = Instant::now();
-
         let (sp, dp) = get_corresponding_points(&correspondence, &src_tranformed, dst);
-
-        // println!("t3 = {:.4?}", t3.elapsed());
-        // let t4 = Instant::now();
-
         let dparam = estimate_transform(&Param::zeros(), &sp, &dp);
-
-        // println!("t4 = {:.4?}", t4.elapsed());
-        // println!("");
 
         param = dparam + param;
     }
