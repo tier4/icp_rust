@@ -131,7 +131,7 @@ pub fn estimate_transform(
     let mut prev_error: f64 = f64::MAX;
 
     let mut param = *initial_param;
-    for i in 0..max_iter {
+    for _ in 0..max_iter {
         let delta = match weighted_gauss_newton_update(&param, &src, &dst) {
             Some(d) => d,
             None => break,
@@ -139,9 +139,9 @@ pub fn estimate_transform(
         // println!("param = {:?}", param);
         // println!("delta = {:?}", delta);
         // println!("iteration: {:5}, error = {:>8.8}", i, huber_error(&param, &src, &dst));
-        // if delta.norm_squared() < delta_norm_threshold {
-        //     break;
-        // }
+        if delta.norm_squared() < delta_norm_threshold {
+            break;
+        }
 
         let error = huber_error(&param, src, dst);
         if error > prev_error {
@@ -205,7 +205,6 @@ pub fn icp(initial_param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>
     let max_iter: usize = 500;
 
     let mut param: Param = *initial_param;
-    let mut src_mut = src.iter().map(|p| *p).collect::<Vec<Measurement>>();
     for _ in 0..max_iter {
         let src_tranformed = src
             .iter()
@@ -213,9 +212,6 @@ pub fn icp(initial_param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>
             .collect::<Vec<Measurement>>();
         let correspondence = associate(&kdtree, &src_tranformed);
         let (sp, dp) = get_corresponding_points(&correspondence, &src_tranformed, dst);
-        // for (s, d) in src_points.iter().zip(dst_points.iter()) {
-        //     println!("s = {:?}, d = {:?}", s, d);
-        // }
         let dparam = estimate_transform(&Param::zeros(), &sp, &dp);
         param = dparam + param;
     }
@@ -348,6 +344,7 @@ pub fn weighted_gauss_newton_update(
     }
 
     if jtj.rank(1.0e-7) < param.nrows() {
+        println!("insufficient rank");
         return None;
     }
 
@@ -909,16 +906,12 @@ mod tests {
             Measurement::new(1.0, 0.0),
         ];
 
-        let param_true = Param::new(0.01, 0.01, -0.00);
+        let param_true = Param::new(0.01, 0.01, -0.02);
 
         let dst = src
             .iter()
             .map(|p| transform(&param_true, p))
             .collect::<Vec<Measurement>>();
-
-        for dp in &dst {
-            println!("dp = {:?}", dp);
-        }
 
         let diff = Param::new(0.000, 0.010, 0.010);
         let initial_param = param_true + diff;

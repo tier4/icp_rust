@@ -1,8 +1,8 @@
-use nalgebra::{Vector2, Vector3};
+use nalgebra::Vector2;
 use piston_window::{EventLoop, PistonWindow, WindowSettings};
 use plotters::drawing::IntoDrawingArea;
 use plotters::prelude::{
-    ChartBuilder, Circle, LineSeries, RGBColor, BLACK, BLUE, GREEN, MAGENTA, RED, WHITE, YELLOW,
+    ChartBuilder, Circle, LineSeries, RGBColor, BLUE, GREEN, RED, WHITE, YELLOW,
 };
 use plotters::style::Color;
 use plotters_piston::{draw_piston_window, PistonBackend};
@@ -38,27 +38,6 @@ fn load_scan(lines: std::io::Lines<std::io::BufReader<File>>) -> Vec<icp::Measur
     return scan_landmarks;
 }
 
-fn estimate_transform(
-    src: &Vec<icp::Measurement>,
-    dst: &Vec<icp::Measurement>,
-    correspondence: &Vec<(usize, usize)>,
-    maybe_initial_param: &Option<icp::Param>,
-) -> icp::Param {
-    let initial_param = match maybe_initial_param {
-        Some(param) => *param,
-        None => icp::Param::zeros(),
-    };
-    let src_points = correspondence
-        .iter()
-        .map(|(src_index, _)| src[*src_index])
-        .collect::<Vec<_>>();
-    let dst_points = correspondence
-        .iter()
-        .map(|(_, dst_index)| dst[*dst_index])
-        .collect::<Vec<_>>();
-    icp::estimate_transform(&initial_param, &src_points, &dst_points)
-}
-
 fn to_point(p: &icp::Measurement, color: &RGBColor) -> Circle<(f64, f64), u32> {
     Circle::new((p[0], p[1]), 2, color.mix(0.7).filled())
 }
@@ -80,7 +59,7 @@ fn axis_lines(
     //      LineSeries::new(vec![(t[0], t[1]), (yp[0], yp[1])], GREEN)]
 }
 
-const WINDOW_RANGE: f64 = 4000.;
+const WINDOW_RANGE: f64 = 3000.;
 const FPS: u64 = 60;
 fn main() {
     let mut window: PistonWindow = WindowSettings::new("LiDAR scan", [800, 800])
@@ -91,7 +70,7 @@ fn main() {
     let mut src = vec![];
     let mut index = 0;
 
-    let mut transform = icp::Transform::identity();
+    let mut param = icp::Param::zeros();
 
     let mut path: Vec<Vector2<f64>> = vec![];
     let mut draw = |b: PistonBackend| -> Result<(), Box<dyn std::error::Error>> {
@@ -119,11 +98,17 @@ fn main() {
 
         let dst = load_scan(lines);
 
-        let param = icp::icp(&icp::Param::zeros(), &src, &dst);
+        param = icp::icp(&param, &src, &dst);
 
-        transform = icp::exp_se2(&param) * transform;
+        cc.draw_series(src.iter().map(|p| to_point(&p, &BLUE)))
+            .unwrap();
+        cc.draw_series(dst.iter().map(|p| {
+            let b = icp::transform(&(-param), &p);
+            to_point(&b, &YELLOW)
+        }))
+        .unwrap();
 
-        let inv_transform = icp::inverse_3x3(&transform).unwrap();
+        let inv_transform = icp::exp_se2(&(-param));
         let (t, xp, yp) = axis_lines(&inv_transform, 200.);
         cc.draw_series(LineSeries::new(vec![(t[0], t[1]), (xp[0], xp[1])], RED))
             .unwrap();
@@ -138,7 +123,6 @@ fn main() {
             cc.draw_series(line).unwrap();
         }
 
-        src = dst;
         Ok(())
     };
 
