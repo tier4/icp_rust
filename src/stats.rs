@@ -1,5 +1,6 @@
 // Linear time median search
-use std::cmp::PartialOrd;
+use alloc::vec::Vec;
+use core::cmp::PartialOrd;
 
 pub fn mutable_median(input: &mut Vec<f64>) -> Option<f64> {
     let cmp = |a: &f64, b: &f64| a.partial_cmp(b).unwrap();

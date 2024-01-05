@@ -1,5 +1,7 @@
 use nalgebra::{Matrix2, Matrix3, Vector2, Vector3};
 
+use core::f64::consts;
+
 use crate::so2;
 
 pub fn get_rt(transform: &Matrix3<f64>) -> (Matrix2<f64>, Vector2<f64>) {
@@ -53,7 +55,7 @@ pub fn log(transform: &Matrix3<f64>) -> Vector3<f64> {
     let theta = so2::log(rot);
     let v_inv = if theta == 0. {
         Matrix2::identity()
-    } else if theta == std::f64::consts::PI {
+    } else if theta == consts::PI {
         #[rustfmt::skip]
         Matrix2::new(
             0., 0.5 * theta,

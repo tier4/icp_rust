@@ -1,13 +1,17 @@
+#![cfg_attr(not(feature = "std"), no_std)]
 #![feature(stmt_expr_attributes)]
 #![feature(test)]
+
+#[macro_use]
+extern crate alloc;
 extern crate test;
 
+use alloc::vec::Vec;
 use kiddo::float::distance::SquaredEuclidean;
 use kiddo::float::kdtree::KdTree;
 
 use nalgebra::Cholesky;
-use nalgebra::{Matrix2, Matrix3, Vector2, Vector3};
-use std::time::Instant;
+use nalgebra::{Matrix2, Matrix3, Vector2};
 
 pub mod se2;
 pub mod so2;
