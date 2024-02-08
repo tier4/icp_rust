@@ -1,0 +1,22 @@
+name: Test
+
+on:
+  schedule:
+    - cron:  '0 13 * * 1'
+  push:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: |
+          sudo apt update
+          sudo apt install -y libudev-dev
+          curl https://sh.rustup.rs > installer.sh
+          sh ./installer.sh --default-toolchain none -y
+          source "$HOME/.cargo/env"
+          rustup default nightly
+          cargo test
+          cargo fmt --all -- --check
