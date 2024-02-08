@@ -75,13 +75,7 @@ fn main() {
         index += 1;
         let filename = format!("scan/{}.txt", index);
 
-        let lines = match read_lines(filename) {
-            Ok(lines) => lines,
-            Err(e) => {
-                println!("{:?}", e);
-                return Ok(());
-            }
-        };
+        let lines = read_lines(filename)?;
 
         if index == 1 {
             src = load_scan(lines);
