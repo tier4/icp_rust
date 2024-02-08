@@ -17,6 +17,7 @@ pub fn exp(theta: f64) -> Matrix2<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::f64::consts;
 
     #[test]
     fn test_exp() {
@@ -32,19 +33,19 @@ mod tests {
 
     #[test]
     fn test_log() {
-        let theta = 0.3 * std::f64::consts::PI;
+        let theta = 0.3 * consts::PI;
         let rot = exp(theta);
         assert!((log(rot) - theta).abs() < 1e-6);
 
-        let theta = 0.8 * std::f64::consts::PI;
+        let theta = 0.8 * consts::PI;
         let rot = exp(theta);
         assert!((log(rot) - theta).abs() < 1e-6);
 
-        let theta = -0.7 * std::f64::consts::PI;
+        let theta = -0.7 * consts::PI;
         let rot = exp(theta);
         assert!((log(rot) - theta).abs() < 1e-6);
 
-        let theta = -0.1 * std::f64::consts::PI;
+        let theta = -0.1 * consts::PI;
         let rot = exp(theta);
         assert!((log(rot) - theta).abs() < 1e-6);
     }

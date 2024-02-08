@@ -11,7 +11,6 @@ use kiddo::float::distance::SquaredEuclidean;
 use kiddo::float::kdtree::KdTree;
 
 use nalgebra::Cholesky;
-use nalgebra::{Matrix2, Matrix3, Vector2};
 
 pub mod se2;
 pub mod so2;
@@ -21,8 +20,8 @@ mod stats;
 
 pub type Param = nalgebra::Vector3<f64>;
 pub type Transform = nalgebra::Matrix3<f64>;
-pub type Rotation = Matrix2<f64>;
-pub type Translation = Vector2<f64>;
+pub type Rotation = nalgebra::Matrix2<f64>;
+pub type Translation = nalgebra::Vector2<f64>;
 pub type Measurement = nalgebra::Vector2<f64>;
 type Jacobian = nalgebra::Matrix2x3<f64>;
 type Hessian = nalgebra::Matrix3<f64>;
@@ -142,7 +141,7 @@ pub fn icp(initial_param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>
     param
 }
 
-pub fn inverse_3x3(matrix: &Matrix3<f64>) -> Option<Matrix3<f64>> {
+pub fn inverse_3x3(matrix: &nalgebra::Matrix3<f64>) -> Option<nalgebra::Matrix3<f64>> {
     let m00 = matrix[(0, 0)];
     let m01 = matrix[(0, 1)];
     let m02 = matrix[(0, 2)];
@@ -162,7 +161,7 @@ pub fn inverse_3x3(matrix: &Matrix3<f64>) -> Option<Matrix3<f64>> {
     }
 
     #[rustfmt::skip]
-    let mat = Matrix3::new(
+    let mat = nalgebra::Matrix3::new(
         m22 * m11 - m21 * m12, -(m22 * m01 - m21 * m02), m12 * m01 - m11 * m02,
         -(m22 * m10 - m20 * m12), m22 * m00 - m20 * m02, -(m12 * m00 - m10 * m02),
         m21 * m10 - m20 * m11, -(m21 * m00 - m20 * m01), m11 * m00 - m10 * m01,
@@ -171,7 +170,7 @@ pub fn inverse_3x3(matrix: &Matrix3<f64>) -> Option<Matrix3<f64>> {
 }
 
 fn jacobian(param: &Param, landmark: &Measurement) -> Jacobian {
-    let a = Vector2::new(-landmark[1], landmark[0]);
+    let a = nalgebra::Vector2::new(-landmark[1], landmark[0]);
     let (rot, _t) = se2::calc_rt(param);
     let b = rot * a;
     #[rustfmt::skip]
@@ -278,10 +277,10 @@ mod tests {
 
     #[test]
     fn test_residual() {
-        let param: Param = Vector3::new(-10., 20., 0.01);
-        let src = Vector2::new(7f64, 8f64);
+        let param: Param = nalgebra::Vector3::new(-10., 20., 0.01);
+        let src = nalgebra::Vector2::new(7f64, 8f64);
         let dst = transform(&param, &src);
-        assert_eq!(residual(&param, &src, &dst), Vector2::zeros());
+        assert_eq!(residual(&param, &src, &dst), nalgebra::Vector2::zeros());
     }
 
     #[test]
@@ -298,7 +297,7 @@ mod tests {
             Measurement::new(-3., -8.),
         ];
 
-        let param: Param = Vector3::new(10., 20., 0.01);
+        let param: Param = nalgebra::Vector3::new(10., 20., 0.01);
         let r0 = residual(&param, &src[0], &dst[0]);
         let r1 = residual(&param, &src[1], &dst[1]);
         let r2 = residual(&param, &src[2], &dst[2]);
@@ -308,10 +307,10 @@ mod tests {
 
     #[test]
     fn test_inverse_3x3() {
-        let identity = Matrix3::identity();
+        let identity = nalgebra::Matrix3::identity();
 
         #[rustfmt::skip]
-        let matrix = Matrix3::new(
+        let matrix = nalgebra::Matrix3::new(
             -3.64867356, 0.11236464, -7.60555263,
             -3.56881707, -9.77855129, 0.50475873,
             -9.34728378, 0.25373179, -7.55422161,
@@ -322,10 +321,10 @@ mod tests {
         };
         assert!((inverse * matrix - identity).norm() < 1e-14);
 
-        assert!(inverse_3x3(&Matrix3::zeros()).is_none());
+        assert!(inverse_3x3(&nalgebra::Matrix3::zeros()).is_none());
 
         #[rustfmt::skip]
-        let matrix = Matrix3::new(
+        let matrix = nalgebra::Matrix3::new(
             3.0, 1.0, 2.0,
             6.0, 2.0, 4.0,
             9.0, 9.0, 7.0,
@@ -333,7 +332,7 @@ mod tests {
         assert!(inverse_3x3(&matrix).is_none());
 
         #[rustfmt::skip]
-        let matrix = Matrix3::new(
+        let matrix = nalgebra::Matrix3::new(
             3.00792510e-38, -1.97985750e-45, 3.61627897e-44,
             7.09699991e-49, -3.08764937e-49, -8.31427092e-41,
             2.03723891e-42, -3.84594910e-42, 1.00872600e-40,

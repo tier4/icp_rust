@@ -177,7 +177,7 @@ mod tests {
             0.00000000e+00, -1.00000000e+00, -6.36619772e-01,
             0.00000000e+00,  0.00000000e+00,  1.00000000e+00
         );
-        let expected = Vector3::new(-1., 3., std::f64::consts::PI);
+        let expected = Vector3::new(-1., 3., consts::PI);
         let param = log(&transform);
         assert!((param - expected).norm() < 1e-6);
 
