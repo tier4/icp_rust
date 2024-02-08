@@ -2,8 +2,13 @@
 
 ![](assets/icp.gif)
 
+## Target environment
+
+Linux x86_64
+
 ## How to run
 
 ```
-cargo run --example scans --release
+$ rustup toolchain install nightly-x86_64-unknown-linux-gnu
+$ cargo run --example scans --release
 ```
