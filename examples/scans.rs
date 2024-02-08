@@ -73,7 +73,7 @@ fn main() {
     let mut path: Vec<Vector2<f64>> = vec![];
     let mut draw = |b: PistonBackend| -> Result<(), Box<dyn std::error::Error>> {
         index += 1;
-        let filename = format!("scan/{}.txt", index);
+        let filename = format!("scans/{}.txt", index);
 
         let lines = read_lines(filename)?;
 
