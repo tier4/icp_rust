@@ -1,6 +1,6 @@
 # ICP (Iterative Closest Point) in Rust
 
-![](icp.gif)
+![](assets/icp.gif)
 
 ## How to run
 
