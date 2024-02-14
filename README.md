@@ -1,5 +1,7 @@
 # ICP (Iterative Closest Point) in Rust
 
+![](https://github.com/tier4/icp_rust/actions/workflows/test.yml/badge.svg)
+
 ![](assets/icp.gif)
 
 ## Target environment
