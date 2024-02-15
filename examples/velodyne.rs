@@ -6,16 +6,16 @@ use ndarray::{Array1, Array2, Array3};
 
 use piston_window::{EventLoop, PistonWindow, WindowSettings};
 use plotters::drawing::IntoDrawingArea;
-use plotters::prelude::{ChartBuilder, Cubiod, RGBColor, BLUE, WHITE};
+use plotters::prelude::{ChartBuilder, RGBColor, Rectangle, BLUE, WHITE};
 use plotters::style::Color;
 use plotters_piston::{draw_piston_window, PistonBackend};
 
 const N_POINTS_IN_PACKET: usize = 24 * 16;
 
-fn to_point(p: &(f64, f64, f64), color: &RGBColor) -> Cubiod<f64, f64, f64> {
-    let (x, y, z) = p;
-    let s = 1e-3;
-    Cubiod::new([(x - s, y - s, z - s), (x + s, y + s, z + s)], color, color)
+fn to_point(p: &(f64, f64), color: &RGBColor) -> Rectangle<(f64, f64)> {
+    let (x, y) = p;
+    let s = 1e-2;
+    Rectangle::new([(x - s, y - s), (x + s, y + s)], color.filled())
 }
 
 fn squared_norm(p: &Array1<f64>) -> f64 {
@@ -74,24 +74,22 @@ fn main() -> hdf5::Result<()> {
     let mut index = 0;
 
     let mut draw = |b: PistonBackend| -> Result<(), Box<dyn std::error::Error>> {
-        println!("index = {}", index);
-        let array = scan.get_range(index, index + step).unwrap();
+        if index + step > scan.size() {
+            return Ok(());
+        }
 
+        let array = scan.get_range(index, index + step).unwrap();
         index += step;
 
         let root = b.into_drawing_area();
         root.fill(&WHITE).unwrap();
         let mut cc = ChartBuilder::on(&root)
-            .build_cartesian_3d(
-                -WINDOW_RANGE..WINDOW_RANGE,
-                -WINDOW_RANGE..WINDOW_RANGE,
-                -WINDOW_RANGE..WINDOW_RANGE,
-            )
+            .build_cartesian_2d(-WINDOW_RANGE..WINDOW_RANGE, -WINDOW_RANGE..WINDOW_RANGE)
             .unwrap();
 
         cc.draw_series((0..array.shape()[0]).map(|i| {
             let p = array.slice(ndarray::s![i, ..]);
-            to_point(&(p[0], p[1], p[2]), &BLUE)
+            to_point(&(p[0], p[1]), &BLUE)
         }))
         .unwrap();
 
