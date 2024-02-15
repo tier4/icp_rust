@@ -48,11 +48,6 @@ fn associate(kdtree: &Tree, src: &Vec<Measurement>) -> Vec<(usize, usize)> {
     correspondence
 }
 
-pub fn transform(param: &Param, landmark: &Measurement) -> Measurement {
-    let (rot, t) = se2::calc_rt(param);
-    rot * landmark + t
-}
-
 pub struct Transform {
     pub rot: Rotation,
     pub t: Translation,
@@ -148,9 +143,10 @@ pub fn icp(initial_param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>
 
     let mut param: Param = *initial_param;
     for _ in 0..max_iter {
+        let transform = Transform::new(&param);
         let src_tranformed = src
             .iter()
-            .map(|sp| transform(&param, &sp))
+            .map(|sp| transform.transform(&sp))
             .collect::<Vec<Measurement>>();
 
         let correspondence = associate(&kdtree, &src_tranformed);

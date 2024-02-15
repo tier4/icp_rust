@@ -92,16 +92,16 @@ fn main() {
         let dst = load_scan(lines);
 
         param = icp::icp(&param, &src, &dst);
+        let inv_transform = icp::Transform::new(&(-param));
 
         cc.draw_series(src.iter().map(|p| to_point(&p, &BLUE)))
             .unwrap();
         cc.draw_series(dst.iter().map(|p| {
-            let b = icp::transform(&(-param), &p);
+            let b = inv_transform.transform(&p);
             to_point(&b, &GREEN)
         }))
         .unwrap();
 
-        let inv_transform = icp::Transform::new(&(-param));
         let (t, xp, yp) = axis_lines(&inv_transform, 200.);
         cc.draw_series(LineSeries::new(vec![(t[0], t[1]), (xp[0], xp[1])], RED))
             .unwrap();
