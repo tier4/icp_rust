@@ -19,7 +19,6 @@ mod huber;
 mod stats;
 
 pub type Param = nalgebra::Vector3<f64>;
-pub type Transform = nalgebra::Matrix3<f64>;
 pub type Rotation = nalgebra::Matrix2<f64>;
 pub type Translation = nalgebra::Vector2<f64>;
 pub type Measurement = nalgebra::Vector2<f64>;
@@ -54,20 +53,41 @@ pub fn transform(param: &Param, landmark: &Measurement) -> Measurement {
     rot * landmark + t
 }
 
-pub fn residual(param: &Param, src: &Measurement, dst: &Measurement) -> Measurement {
-    transform(param, src) - dst
+pub struct Transform {
+    pub rot: Rotation,
+    pub t: Translation,
+    pub param: Param,
 }
 
-pub fn error(param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>) -> f64 {
+impl Transform {
+    pub fn new(param: &Param) -> Self {
+        let (rot, t) = se2::calc_rt(param);
+        Transform {
+            rot,
+            t,
+            param: *param,
+        }
+    }
+
+    pub fn transform(&self, landmark: &Measurement) -> Measurement {
+        self.rot * landmark + self.t
+    }
+}
+
+pub fn residual(transform: &Transform, src: &Measurement, dst: &Measurement) -> Measurement {
+    transform.transform(src) - dst
+}
+
+pub fn error(transform: &Transform, src: &Vec<Measurement>, dst: &Vec<Measurement>) -> f64 {
     src.iter().zip(dst.iter()).fold(0f64, |sum, (s, d)| {
-        let r = residual(param, s, d);
+        let r = residual(transform, s, d);
         sum + r.dot(&r)
     })
 }
 
-pub fn huber_error(param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>) -> f64 {
+pub fn huber_error(transform: &Transform, src: &Vec<Measurement>, dst: &Vec<Measurement>) -> f64 {
     src.iter().zip(dst.iter()).fold(0f64, |sum, (s, d)| {
-        let r = residual(param, s, d);
+        let r = residual(transform, s, d);
         sum + huber::rho(r.dot(&r), HUBER_K)
     })
 }
@@ -84,7 +104,8 @@ pub fn estimate_transform(
 
     let mut param = *initial_param;
     for _ in 0..max_iter {
-        let delta = match weighted_gauss_newton_update(&param, &src, &dst) {
+        let transform = Transform::new(&param);
+        let delta = match weighted_gauss_newton_update(&transform, &src, &dst) {
             Some(d) => d,
             None => break,
         };
@@ -93,7 +114,7 @@ pub fn estimate_transform(
             break;
         }
 
-        let error = huber_error(&param, src, dst);
+        let error = huber_error(&transform, src, dst);
         if error > prev_error {
             break;
         }
@@ -169,9 +190,9 @@ pub fn inverse_3x3(matrix: &nalgebra::Matrix3<f64>) -> Option<nalgebra::Matrix3<
     Some(mat / det)
 }
 
-fn jacobian(param: &Param, landmark: &Measurement) -> Jacobian {
+fn jacobian(rot: &Rotation, landmark: &Measurement) -> Jacobian {
     let a = nalgebra::Vector2::new(-landmark[1], landmark[0]);
-    let (rot, _t) = se2::calc_rt(param);
+    let rot = rot;
     let b = rot * a;
     #[rustfmt::skip]
     Jacobian::new(
@@ -185,7 +206,7 @@ fn check_input_size(input: &Vec<Measurement>) -> bool {
 }
 
 pub fn gauss_newton_update(
-    param: &Param,
+    transform: &Transform,
     src: &Vec<Measurement>,
     dst: &Vec<Measurement>,
 ) -> Option<Param> {
@@ -197,8 +218,8 @@ pub fn gauss_newton_update(
     let (jtr, jtj) = src.iter().zip(dst.iter()).fold(
         (Param::zeros(), Hessian::zeros()),
         |(jtr, jtj), (s, d)| {
-            let j = jacobian(param, s);
-            let r = transform(param, s) - d;
+            let j = jacobian(&transform.rot, s);
+            let r = transform.transform(s) - d;
             let jtr_: Param = j.transpose() * r;
             let jtj_: Hessian = j.transpose() * j;
             (jtr + jtr_, jtj + jtj_)
@@ -226,7 +247,7 @@ fn calc_stddevs(residuals: &Vec<Measurement>) -> Option<Vec<f64>> {
 }
 
 pub fn weighted_gauss_newton_update(
-    param: &Param,
+    transform: &Transform,
     src: &Vec<Measurement>,
     dst: &Vec<Measurement>,
 ) -> Option<Param> {
@@ -240,7 +261,7 @@ pub fn weighted_gauss_newton_update(
     let residuals = src
         .iter()
         .zip(dst.iter())
-        .map(|(s, d)| residual(param, s, d))
+        .map(|(s, d)| residual(transform, s, d))
         .collect::<Vec<_>>();
 
     let stddevs = match calc_stddevs(&residuals) {
@@ -251,7 +272,7 @@ pub fn weighted_gauss_newton_update(
     let mut jtr = Param::zeros();
     let mut jtj = Hessian::zeros();
     for (s, r) in src.iter().zip(residuals.iter()) {
-        let jacobian_i = jacobian(param, s);
+        let jacobian_i = jacobian(&transform.rot, s);
         for (j, jacobian_ij) in jacobian_i.row_iter().enumerate() {
             if stddevs[j] == 0. {
                 continue;
@@ -278,9 +299,10 @@ mod tests {
     #[test]
     fn test_residual() {
         let param: Param = nalgebra::Vector3::new(-10., 20., 0.01);
+        let transform = Transform::new(&param);
         let src = nalgebra::Vector2::new(7f64, 8f64);
-        let dst = transform(&param, &src);
-        assert_eq!(residual(&param, &src, &dst), nalgebra::Vector2::zeros());
+        let dst = transform.transform(&src);
+        assert_eq!(residual(&transform, &src, &dst), nalgebra::Vector2::zeros());
     }
 
     #[test]
@@ -298,11 +320,12 @@ mod tests {
         ];
 
         let param: Param = nalgebra::Vector3::new(10., 20., 0.01);
-        let r0 = residual(&param, &src[0], &dst[0]);
-        let r1 = residual(&param, &src[1], &dst[1]);
-        let r2 = residual(&param, &src[2], &dst[2]);
+        let transform = Transform::new(&param);
+        let r0 = residual(&transform, &src[0], &dst[0]);
+        let r1 = residual(&transform, &src[1], &dst[1]);
+        let r2 = residual(&transform, &src[2], &dst[2]);
         let expected = r0.norm_squared() + r1.norm_squared() + r2.norm_squared();
-        assert_eq!(error(&param, &src, &dst), expected);
+        assert_eq!(error(&transform, &src, &dst), expected);
     }
 
     #[test]
@@ -347,21 +370,22 @@ mod tests {
     #[test]
     fn test_gauss_newton_update_input_size() {
         let param = Param::new(10.0, 30.0, -0.15);
+        let transform = Transform::new(&param);
 
         let src = vec![];
         let dst = vec![];
-        assert!(gauss_newton_update(&param, &src, &dst).is_none());
+        assert!(gauss_newton_update(&transform, &src, &dst).is_none());
 
         let src = vec![Measurement::new(-8.89304516, 0.54202289)];
-        let dst = vec![transform(&param, &src[0])];
-        assert!(gauss_newton_update(&param, &src, &dst).is_none());
+        let dst = vec![transform.transform(&src[0])];
+        assert!(gauss_newton_update(&transform, &src, &dst).is_none());
 
         let src = vec![
             Measurement::new(-8.89304516, 0.54202289),
             Measurement::new(-4.03198385, -2.81807802),
         ];
-        let dst = vec![transform(&param, &src[0]), transform(&param, &src[1])];
-        assert!(gauss_newton_update(&param, &src, &dst).is_some());
+        let dst = vec![transform.transform(&src[0]), transform.transform(&src[1])];
+        assert!(gauss_newton_update(&transform, &src, &dst).is_some());
     }
 
     #[test]
@@ -369,6 +393,8 @@ mod tests {
         let true_param = Param::new(10.0, 30.0, -0.15);
         let dparam = Param::new(0.3, -0.5, 0.001);
         let initial_param = true_param + dparam;
+        let true_transform = Transform::new(&true_param);
+        let initial_transform = Transform::new(&initial_param);
 
         let src = vec![
             Measurement::new(-8.76116663, 3.50338231),
@@ -379,41 +405,45 @@ mod tests {
         ];
         let dst = src
             .iter()
-            .map(|p| transform(&true_param, p))
+            .map(|p| true_transform.transform(&p))
             .collect::<Vec<_>>();
 
-        let update = match gauss_newton_update(&initial_param, &src, &dst) {
+        let update = match gauss_newton_update(&initial_transform, &src, &dst) {
             Some(s) => s,
             None => panic!("Return value cannot be None"),
         };
         let updated_param = initial_param + update;
 
-        let e0 = error(&initial_param, &src, &dst);
-        let e1 = error(&updated_param, &src, &dst);
+        let initial_transform = Transform::new(&initial_param);
+        let updated_transform = Transform::new(&updated_param);
+
+        let e0 = error(&initial_transform, &src, &dst);
+        let e1 = error(&updated_transform, &src, &dst);
         assert!(e1 < e0 * 0.01);
     }
 
     #[test]
     fn test_weighted_gauss_newton_update_input_size() {
         let param = Param::new(10.0, 30.0, -0.15);
+        let transform = Transform::new(&param);
 
         // insufficient input size
         let src = vec![];
         let dst = vec![];
-        assert!(weighted_gauss_newton_update(&param, &src, &dst).is_none());
+        assert!(weighted_gauss_newton_update(&transform, &src, &dst).is_none());
 
         // insufficient input size
         let src = vec![Measurement::new(-8.89304516, 0.54202289)];
-        let dst = vec![transform(&param, &src[0])];
-        assert!(weighted_gauss_newton_update(&param, &src, &dst).is_none());
+        let dst = vec![transform.transform(&src[0])];
+        assert!(weighted_gauss_newton_update(&transform, &src, &dst).is_none());
 
         // insufficient input size
         let src = vec![
             Measurement::new(-8.89304516, 0.54202289),
             Measurement::new(-4.03198385, -2.81807802),
         ];
-        let dst = vec![transform(&param, &src[0]), transform(&param, &src[1])];
-        assert!(weighted_gauss_newton_update(&param, &src, &dst).is_none());
+        let dst = vec![transform.transform(&src[0]), transform.transform(&src[1])];
+        assert!(weighted_gauss_newton_update(&transform, &src, &dst).is_none());
 
         // sufficient input size but rank is insufficient
         let src = vec![
@@ -422,11 +452,11 @@ mod tests {
             Measurement::new(-4.03198385, -2.81807802),
         ];
         let dst = vec![
-            transform(&param, &src[0]),
-            transform(&param, &src[1]),
-            transform(&param, &src[2]),
+            transform.transform(&src[0]),
+            transform.transform(&src[1]),
+            transform.transform(&src[2]),
         ];
-        assert!(weighted_gauss_newton_update(&param, &src, &dst).is_none());
+        assert!(weighted_gauss_newton_update(&transform, &src, &dst).is_none());
 
         // sufficient input size but rank is insufficient
         let src = vec![
@@ -435,11 +465,11 @@ mod tests {
             Measurement::new(4.40356349, -9.43358563),
         ];
         let dst = vec![
-            transform(&param, &src[0]),
-            transform(&param, &src[1]),
-            transform(&param, &src[2]),
+            transform.transform(&src[0]),
+            transform.transform(&src[1]),
+            transform.transform(&src[2]),
         ];
-        assert!(weighted_gauss_newton_update(&param, &src, &dst).is_none());
+        assert!(weighted_gauss_newton_update(&transform, &src, &dst).is_none());
     }
 
     #[test]
@@ -453,17 +483,19 @@ mod tests {
             Measurement::new(0.0, 0.5),
         ];
 
-        let param_true = Param::new(0.00, 0.01, 0.00);
+        let true_param = Param::new(0.00, 0.01, 0.00);
+        let true_transform = Transform::new(&true_param);
 
         let dst = src
             .iter()
-            .map(|p| transform(&param_true, p))
+            .map(|p| true_transform.transform(p))
             .collect::<Vec<Measurement>>();
 
         let initial_param = Param::new(0.00, 0.00, 0.00);
+        let initial_transform = Transform::new(&initial_param);
         // TODO Actually there is some error, but Hessian is not invertible so
         // the update cannot be calculated
-        assert!(weighted_gauss_newton_update(&initial_param, &src, &dst).is_none());
+        assert!(weighted_gauss_newton_update(&initial_transform, &src, &dst).is_none());
     }
 
     #[test]
@@ -471,6 +503,9 @@ mod tests {
         let true_param = Param::new(10.0, 30.0, -0.15);
         let dparam = Param::new(0.3, -0.5, 0.001);
         let initial_param = true_param + dparam;
+
+        let true_transform = Transform::new(&true_param);
+        let initial_transform = Transform::new(&initial_param);
 
         let src = vec![
             Measurement::new(-8.89304516, 0.54202289),
@@ -524,22 +559,24 @@ mod tests {
         let dst = src
             .iter()
             .zip(noise.iter())
-            .map(|(p, n)| transform(&true_param, p) + n)
+            .map(|(p, n)| true_transform.transform(&p) + n)
             .collect::<Vec<_>>();
-        let update = match weighted_gauss_newton_update(&initial_param, &src, &dst) {
+        let update = match weighted_gauss_newton_update(&initial_transform, &src, &dst) {
             Some(u) => u,
             None => panic!("Return value cannot be None"),
         };
         let updated_param = initial_param + update;
+        let updated_transform = Transform::new(&updated_param);
 
-        let e0 = error(&initial_param, &src, &dst);
-        let e1 = error(&updated_param, &src, &dst);
+        let e0 = error(&initial_transform, &src, &dst);
+        let e1 = error(&updated_transform, &src, &dst);
         assert!(e1 < e0 * 0.1);
 
         let updated_param = estimate_transform(&initial_param, &src, &dst);
+        let updated_transform = Transform::new(&updated_param);
 
-        let e0 = error(&initial_param, &src, &dst);
-        let e1 = error(&updated_param, &src, &dst);
+        let e0 = error(&initial_transform, &src, &dst);
+        let e1 = error(&updated_transform, &src, &dst);
         assert!(e1 < e0 * 0.001);
     }
 
@@ -638,18 +675,19 @@ mod tests {
             Measurement::new(1.0, 0.0),
         ];
 
-        let param_true = Param::new(0.01, 0.01, -0.02);
+        let true_param = Param::new(0.01, 0.01, -0.02);
+        let true_transform = Transform::new(&true_param);
 
         let dst = src
             .iter()
-            .map(|p| transform(&param_true, p))
+            .map(|p| true_transform.transform(&p))
             .collect::<Vec<Measurement>>();
 
         let diff = Param::new(0.05, 0.010, 0.010);
-        let initial_param = param_true + diff;
-        let param_pred = icp(&initial_param, &src, &dst);
+        let initial_param = true_param + diff;
+        let pred_param = icp(&initial_param, &src, &dst);
 
-        assert!((param_pred - param_true).norm() < 1e-3);
+        assert!((pred_param - true_param).norm() < 1e-3);
     }
 
     use test::Bencher;
@@ -657,6 +695,7 @@ mod tests {
     #[bench]
     fn bench_gauss_newton_update(b: &mut Bencher) {
         let true_param = Param::new(10.0, 30.0, -0.15);
+        let true_transform = Transform::new(&true_param);
         let dparam = Param::new(0.3, -0.5, 0.001);
         let initial_param = true_param + dparam;
 
@@ -712,10 +751,11 @@ mod tests {
         let dst = src
             .iter()
             .zip(noise.iter())
-            .map(|(p, n)| transform(&true_param, p) + n)
+            .map(|(p, n)| true_transform.transform(&p) + n)
             .collect::<Vec<_>>();
 
-        b.iter(|| weighted_gauss_newton_update(&initial_param, &src, &dst));
+        let initial_transform = Transform::new(&initial_param);
+        b.iter(|| weighted_gauss_newton_update(&initial_transform, &src, &dst));
     }
 
     #[bench]
@@ -744,15 +784,16 @@ mod tests {
             Measurement::new(1.0, 0.0),
         ];
 
-        let param_true = Param::new(0.01, 0.01, -0.02);
+        let true_param = Param::new(0.01, 0.01, -0.02);
+        let true_transform = Transform::new(&true_param);
 
         let dst = src
             .iter()
-            .map(|p| transform(&param_true, p))
+            .map(|p| true_transform.transform(&p))
             .collect::<Vec<Measurement>>();
 
         let diff = Param::new(0.000, 0.010, 0.010);
-        let initial_param = param_true + diff;
+        let initial_param = true_param + diff;
 
         b.iter(|| icp(&initial_param, &src, &dst));
     }

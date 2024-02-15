@@ -1,8 +1,6 @@
-use core::ops::Range;
-
 use hdf5;
 use ndarray;
-use ndarray::{Array1, Array2, Array3};
+use ndarray::{Array2, Array3};
 
 use piston_window::{EventLoop, PistonWindow, WindowSettings};
 use plotters::drawing::IntoDrawingArea;
@@ -16,10 +14,6 @@ fn to_point(p: &(f64, f64), color: &RGBColor) -> Rectangle<(f64, f64)> {
     let (x, y) = p;
     let s = 1e-2;
     Rectangle::new([(x - s, y - s), (x + s, y + s)], color.filled())
-}
-
-fn squared_norm(p: &Array1<f64>) -> f64 {
-    (0..p.len()).fold(0., |sum, i| sum + p[i] * p[i])
 }
 
 struct Scan {
