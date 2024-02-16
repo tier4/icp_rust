@@ -5,7 +5,7 @@ use kiddo::float::kdtree::KdTree as KiddoTree;
 
 use crate::types::Vector;
 
-type Tree<const D: usize> = KiddoTree<f64, usize, D, 64, u32>;
+type Tree<const D: usize> = KiddoTree<f64, usize, D, 128, u32>;
 
 pub struct KdTree<const D: usize> {
     tree: Tree<D>,
@@ -55,16 +55,19 @@ pub fn get_corresponding_points<const D: usize>(
 
 #[test]
 fn test_association() {
-    type Measurement = Vector<2>;
+    type Measurement = Vector<3>;
+
+    #[rustfmt::skip]
     let src = vec![
-        Measurement::new(-8.30289767, 8.47750876),
-        Measurement::new(-6.45751825, -1.34801312),
-        Measurement::new(-8.66777369, -9.77914636),
-        Measurement::new(-8.36130159, -2.39500161),
-        Measurement::new(-9.64529718, -7.23686057),
+        Measurement::new( 5.08169369,  3.68767137,  0.76520543),
+        Measurement::new(-2.04122854, -5.16303848, -1.82852499),
+        Measurement::new( 9.48919697,  8.51366532,  4.42767643),
+        Measurement::new(-9.88950231, -4.30358176,  0.75194542),
+        Measurement::new(-4.03923337,  4.24277134, -1.73619704),
+        Measurement::new( 1.65107471,  1.60232318,  6.52893714),
     ];
 
-    let dst = vec![src[3], src[2], src[0], src[1], src[4]];
+    let dst = vec![src[3], src[2], src[5], src[0], src[1], src[4]];
 
     let kdtree = KdTree::new(&dst);
     let correspondence = associate(&kdtree, &src);

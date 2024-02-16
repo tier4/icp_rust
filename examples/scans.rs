@@ -1,4 +1,4 @@
-use nalgebra::Vector2;
+use nalgebra::{Vector2, Vector3};
 use piston_window::{EventLoop, PistonWindow, WindowSettings};
 use plotters::drawing::IntoDrawingArea;
 use plotters::prelude::{ChartBuilder, Circle, LineSeries, RGBColor, BLUE, GREEN, RED, WHITE};
@@ -18,7 +18,7 @@ where
     Ok(std::io::BufReader::new(file).lines())
 }
 
-fn load_scan(lines: std::io::Lines<std::io::BufReader<File>>) -> Vec<icp::Measurement> {
+fn load_scan(lines: std::io::Lines<std::io::BufReader<File>>) -> Vec<Vector3<f64>> {
     let mut scan_landmarks = vec![];
     for line in lines {
         let s = match line {
@@ -31,12 +31,12 @@ fn load_scan(lines: std::io::Lines<std::io::BufReader<File>>) -> Vec<icp::Measur
         let xy = s.split(" ").collect::<Vec<_>>();
         let x = xy[0].parse().unwrap();
         let y = xy[1].parse().unwrap();
-        scan_landmarks.push(Vector2::new(x, y));
+        scan_landmarks.push(Vector3::new(x, y, 0.));
     }
     return scan_landmarks;
 }
 
-fn to_point(p: &icp::Measurement, color: &RGBColor) -> Circle<(f64, f64), u32> {
+fn to_point(p: &Vector2<f64>, color: &RGBColor) -> Circle<(f64, f64), u32> {
     Circle::new((p[0], p[1]), 2, color.mix(0.7).filled())
 }
 
@@ -58,8 +58,12 @@ fn axis_lines(
     //      LineSeries::new(vec![(t[0], t[1]), (yp[0], yp[1])], GREEN)]
 }
 
+fn get_xy(p: &Vector3<f64>) -> Vector2<f64> {
+    Vector2::new(p[0], p[1])
+}
+
 const WINDOW_RANGE: f64 = 3000.;
-const FPS: u64 = 60;
+const FPS: u64 = 100;
 fn main() {
     let mut window: PistonWindow = WindowSettings::new("LiDAR scan", [800, 800])
         .build()
@@ -94,10 +98,10 @@ fn main() {
         param = icp::icp(&param, &src, &dst);
         let inv_transform = icp::Transform::new(&(-param));
 
-        cc.draw_series(src.iter().map(|p| to_point(&p, &BLUE)))
+        cc.draw_series(src.iter().map(|p| to_point(&get_xy(p), &BLUE)))
             .unwrap();
         cc.draw_series(dst.iter().map(|p| {
-            let b = inv_transform.transform(&p);
+            let b = inv_transform.transform(&get_xy(p));
             to_point(&b, &GREEN)
         }))
         .unwrap();
