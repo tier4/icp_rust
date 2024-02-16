@@ -7,67 +7,28 @@ extern crate alloc;
 extern crate test;
 
 use alloc::vec::Vec;
-use kiddo::float::distance::SquaredEuclidean;
-use kiddo::float::kdtree::KdTree;
 
 use nalgebra::Cholesky;
 
 pub mod se2;
 pub mod so2;
+pub mod transform;
 
+mod geometry;
 mod huber;
+mod kdtree;
 mod stats;
+mod types;
+
+use crate::geometry::Rotation;
+pub use crate::transform::Transform;
 
 pub type Param = nalgebra::Vector3<f64>;
-pub type Rotation = nalgebra::Matrix2<f64>;
-pub type Translation = nalgebra::Vector2<f64>;
 pub type Measurement = nalgebra::Vector2<f64>;
 type Jacobian = nalgebra::Matrix2x3<f64>;
 type Hessian = nalgebra::Matrix3<f64>;
 
-type Tree = KdTree<f64, usize, 2, 64, u32>;
-
 const HUBER_K: f64 = 1.345;
-
-fn make_kdtree(landmarks: &Vec<Measurement>) -> Tree {
-    let mut kdtree: Tree = KdTree::with_capacity(landmarks.len());
-    landmarks.iter().enumerate().for_each(|(i, landmark)| {
-        let array: [f64; 2] = (*landmark).into();
-        kdtree.add(&array, i);
-    });
-    kdtree
-}
-
-fn associate(kdtree: &Tree, src: &Vec<Measurement>) -> Vec<(usize, usize)> {
-    let mut correspondence = vec![];
-    for (query_index, query) in src.iter().enumerate() {
-        let p: [f64; 2] = (*query).into();
-        let nearest = kdtree.nearest_one::<SquaredEuclidean>(&p);
-        correspondence.push((query_index, nearest.item));
-    }
-    correspondence
-}
-
-pub struct Transform {
-    pub rot: Rotation,
-    pub t: Translation,
-    pub param: Param,
-}
-
-impl Transform {
-    pub fn new(param: &Param) -> Self {
-        let (rot, t) = se2::calc_rt(param);
-        Transform {
-            rot,
-            t,
-            param: *param,
-        }
-    }
-
-    pub fn transform(&self, landmark: &Measurement) -> Measurement {
-        self.rot * landmark + self.t
-    }
-}
 
 pub fn residual(transform: &Transform, src: &Measurement, dst: &Measurement) -> Measurement {
     transform.transform(src) - dst
@@ -121,24 +82,8 @@ pub fn estimate_transform(
     param
 }
 
-fn get_corresponding_points(
-    correspondence: &Vec<(usize, usize)>,
-    src: &Vec<Measurement>,
-    dst: &Vec<Measurement>,
-) -> (Vec<Measurement>, Vec<Measurement>) {
-    let src_points = correspondence
-        .iter()
-        .map(|(src_index, _)| src[*src_index])
-        .collect::<Vec<_>>();
-    let dst_points = correspondence
-        .iter()
-        .map(|(_, dst_index)| dst[*dst_index])
-        .collect::<Vec<_>>();
-    (src_points, dst_points)
-}
-
 pub fn icp(initial_param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>) -> Param {
-    let kdtree = make_kdtree(dst);
+    let kdtree = kdtree::KdTree::new(dst);
     let max_iter: usize = 20;
 
     let mut param: Param = *initial_param;
@@ -149,8 +94,8 @@ pub fn icp(initial_param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>
             .map(|sp| transform.transform(&sp))
             .collect::<Vec<Measurement>>();
 
-        let correspondence = associate(&kdtree, &src_tranformed);
-        let (sp, dp) = get_corresponding_points(&correspondence, &src_tranformed, dst);
+        let correspondence = kdtree::associate(&kdtree, &src_tranformed);
+        let (sp, dp) = kdtree::get_corresponding_points(&correspondence, &src_tranformed, dst);
         let dparam = estimate_transform(&Param::zeros(), &sp, &dp);
 
         param = dparam + param;
@@ -186,7 +131,7 @@ pub fn inverse_3x3(matrix: &nalgebra::Matrix3<f64>) -> Option<nalgebra::Matrix3<
     Some(mat / det)
 }
 
-fn jacobian(rot: &Rotation, landmark: &Measurement) -> Jacobian {
+fn jacobian(rot: &Rotation<2>, landmark: &Measurement) -> Jacobian {
     let a = nalgebra::Vector2::new(-landmark[1], landmark[0]);
     let rot = rot;
     let b = rot * a;
@@ -619,30 +564,6 @@ mod tests {
         // compare to stddevs calced by numpy
         assert!((stddevs[0] - 10.88547151).abs() < 1.0);
         assert!((stddevs[1] - 10.75361579).abs() < 1.0);
-    }
-
-    #[test]
-    fn test_association() {
-        let src = vec![
-            Measurement::new(-8.30289767, 8.47750876),
-            Measurement::new(-6.45751825, -1.34801312),
-            Measurement::new(-8.66777369, -9.77914636),
-            Measurement::new(-8.36130159, -2.39500161),
-            Measurement::new(-9.64529718, -7.23686057),
-        ];
-
-        let dst = vec![src[3], src[2], src[0], src[1], src[4]];
-
-        let kdtree = make_kdtree(&dst);
-        let correspondence = associate(&kdtree, &src);
-
-        assert_eq!(src.len(), correspondence.len());
-
-        let (sp, dp) = get_corresponding_points(&correspondence, &src, &dst);
-
-        for (s, d) in sp.iter().zip(dp.iter()) {
-            assert_eq!(s, d);
-        }
     }
 
     #[test]
