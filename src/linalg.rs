@@ -1,4 +1,4 @@
-pub fn inverse_3x3(matrix: &nalgebra::Matrix3<f64>) -> Option<nalgebra::Matrix3<f64>> {
+pub fn inverse3x3(matrix: &nalgebra::Matrix3<f64>) -> Option<nalgebra::Matrix3<f64>> {
     let m00 = matrix[(0, 0)];
     let m01 = matrix[(0, 1)];
     let m02 = matrix[(0, 2)];
@@ -30,7 +30,7 @@ pub fn inverse_3x3(matrix: &nalgebra::Matrix3<f64>) -> Option<nalgebra::Matrix3<
 mod tests {
     use super::*;
     #[test]
-    fn test_inverse_3x3() {
+    fn test_inverse3x3() {
         let identity = nalgebra::Matrix3::identity();
 
         #[rustfmt::skip]
@@ -39,13 +39,13 @@ mod tests {
             -3.56881707, -9.77855129, 0.50475873,
             -9.34728378, 0.25373179, -7.55422161,
         );
-        let inverse = match inverse_3x3(&matrix) {
+        let inverse = match inverse3x3(&matrix) {
             Some(inverse) => inverse,
             None => panic!("Should return Some(inverse_matrix)"),
         };
         assert!((inverse * matrix - identity).norm() < 1e-14);
 
-        assert!(inverse_3x3(&nalgebra::Matrix3::zeros()).is_none());
+        assert!(inverse3x3(&nalgebra::Matrix3::zeros()).is_none());
 
         #[rustfmt::skip]
         let matrix = nalgebra::Matrix3::new(
@@ -53,7 +53,7 @@ mod tests {
             6.0, 2.0, 4.0,
             9.0, 9.0, 7.0,
         );
-        assert!(inverse_3x3(&matrix).is_none());
+        assert!(inverse3x3(&matrix).is_none());
 
         #[rustfmt::skip]
         let matrix = nalgebra::Matrix3::new(
@@ -61,7 +61,7 @@ mod tests {
             7.09699991e-49, -3.08764937e-49, -8.31427092e-41,
             2.03723891e-42, -3.84594910e-42, 1.00872600e-40,
         );
-        let Some(inverse) = inverse_3x3(&matrix) else {
+        let Some(inverse) = inverse3x3(&matrix) else {
             panic!("Should return Some(inverse_matrix)");
         };
         assert!((inverse * matrix - identity).norm() < 1e-14);

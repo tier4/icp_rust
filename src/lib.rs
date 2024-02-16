@@ -196,7 +196,7 @@ pub fn weighted_gauss_newton_update(
         }
     }
 
-    match linalg::inverse_3x3(&jtj) {
+    match linalg::inverse3x3(&jtj) {
         Some(jtj_inv) => return Some(-jtj_inv * jtr),
         None => return None,
     }
