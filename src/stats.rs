@@ -42,9 +42,9 @@ pub fn mutable_standard_deviation(input: &mut Vec<f64>) -> Option<f64> {
     }
 }
 
-pub fn calc_stddevs<const D: usize>(residuals: &Vec<Vector<D>>) -> Option<Vec<f64>> {
+pub fn calc_stddevs<const D: usize>(residuals: &Vec<Vector<D>>) -> Option<[f64; D]> {
     debug_assert!(residuals.len() > 0);
-    let mut stddevs = vec![0f64; D];
+    let mut stddevs = [0f64; D];
     for j in 0..D {
         let mut jth_dim = residuals.iter().map(|r| r[j]).collect::<Vec<_>>();
         let Some(s) = mutable_standard_deviation(&mut jth_dim) else {
