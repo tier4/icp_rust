@@ -9,6 +9,10 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get -yqq update
+          sudo apt-get -yqq install libhdf5-dev
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
