@@ -2,8 +2,6 @@ use alloc::vec::Vec;
 use kiddo;
 use kiddo::float::distance::SquaredEuclidean;
 use kiddo::float::kdtree::KdTree as KiddoTree;
-use nalgebra::base::dimension::Const;
-use nalgebra::{ArrayStorage, Matrix, U1};
 
 use crate::types::Vector;
 

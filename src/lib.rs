@@ -61,9 +61,8 @@ pub fn estimate_transform(
     let mut param = *initial_param;
     for _ in 0..max_iter {
         let transform = Transform::new(&param);
-        let delta = match weighted_gauss_newton_update(&transform, &src, &dst) {
-            Some(d) => d,
-            None => break,
+        let Some(delta) = weighted_gauss_newton_update(&transform, &src, &dst) else {
+            break;
         };
 
         if delta.norm_squared() < delta_norm_threshold {
@@ -177,12 +176,10 @@ fn calc_stddevs(residuals: &Vec<Measurement>) -> Option<Vec<f64>> {
     let mut stddevs = vec![0f64; dimension];
     for j in 0..dimension {
         let mut jth_dim = residuals.iter().map(|r| r[j]).collect::<Vec<_>>();
-        let stddev = stats::mutable_standard_deviation(&mut jth_dim);
-
-        stddevs[j] = match stddev {
-            Some(s) => s,
-            None => return None,
+        let Some(s) = stats::mutable_standard_deviation(&mut jth_dim) else {
+            return None;
         };
+        stddevs[j] = s;
     }
     Some(stddevs)
 }
@@ -205,9 +202,8 @@ pub fn weighted_gauss_newton_update(
         .map(|(s, d)| residual(transform, s, d))
         .collect::<Vec<_>>();
 
-    let stddevs = match calc_stddevs(&residuals) {
-        Some(m) => m,
-        None => return None,
+    let Some(stddevs) = calc_stddevs(&residuals) else {
+        return None;
     };
 
     let mut jtr = Param::zeros();
@@ -301,9 +297,8 @@ mod tests {
             7.09699991e-49, -3.08764937e-49, -8.31427092e-41,
             2.03723891e-42, -3.84594910e-42, 1.00872600e-40,
         );
-        let inverse = match inverse_3x3(&matrix) {
-            Some(inverse) => inverse,
-            None => panic!("Should return Some(inverse_matrix)"),
+        let Some(inverse) = inverse_3x3(&matrix) else {
+            panic!("Should return Some(inverse_matrix)");
         };
         assert!((inverse * matrix - identity).norm() < 1e-14);
     }
@@ -349,9 +344,8 @@ mod tests {
             .map(|p| true_transform.transform(&p))
             .collect::<Vec<_>>();
 
-        let update = match gauss_newton_update(&initial_transform, &src, &dst) {
-            Some(s) => s,
-            None => panic!("Return value cannot be None"),
+        let Some(update) = gauss_newton_update(&initial_transform, &src, &dst) else {
+            panic!("Return value cannot be None");
         };
         let updated_param = initial_param + update;
 
@@ -502,9 +496,8 @@ mod tests {
             .zip(noise.iter())
             .map(|(p, n)| true_transform.transform(&p) + n)
             .collect::<Vec<_>>();
-        let update = match weighted_gauss_newton_update(&initial_transform, &src, &dst) {
-            Some(u) => u,
-            None => panic!("Return value cannot be None"),
+        let Some(update) = weighted_gauss_newton_update(&initial_transform, &src, &dst) else {
+            panic!("Return value cannot be None");
         };
         let updated_param = initial_param + update;
         let updated_transform = Transform::new(&updated_param);
@@ -556,9 +549,8 @@ mod tests {
             Measurement::new(72.17828583, 66.37805296),
             Measurement::new(41.72995451, 50.9864875 )
         ];
-        let stddevs = match calc_stddevs(&measurements) {
-            Some(stddevs) => stddevs,
-            None => panic!(),
+        let Some(stddevs) = calc_stddevs(&measurements) else {
+            panic!();
         };
 
         // compare to stddevs calced by numpy
