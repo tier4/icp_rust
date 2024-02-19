@@ -86,7 +86,7 @@ fn main() {
 
         let dst = load_scan(lines);
 
-        param = icp::icp_2d(&param, &src, &dst);
+        param = icp::icp_2dscan(&param, &src, &dst);
         let inv_transform = icp::Transform::new(&(-param));
 
         cc.draw_series(src.iter().map(|p| to_point(&p, &BLUE)))

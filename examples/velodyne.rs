@@ -96,7 +96,7 @@ fn main() -> hdf5::Result<()> {
     let src_color = RGBColor(0xf1, 0x9c, 0xa7);
     let dst_color = RGBColor(0x00, 0x6e, 0xb0);
 
-    let scan = Scan::new("points/points1.hdf5")?;
+    let scan = Scan::new("points/points5.hdf5")?;
 
     let mut window: PistonWindow = WindowSettings::new("LiDAR scan", [WINDOW_SIZE, WINDOW_SIZE])
         .build()
@@ -126,10 +126,10 @@ fn main() -> hdf5::Result<()> {
         root.fill(&background_color).unwrap();
 
         let mut cc = ChartBuilder::on(&root)
-            .build_cartesian_2d(-2.0..2.0, -3.0..1.0)
+            .build_cartesian_2d(-3.0..3.0, -3.0..3.0)
             .unwrap();
 
-        param = icp::icp_3d(&param, &src, &dst);
+        param = icp::icp_3dscan(&param, &src, &dst);
         let inv_transform = icp::Transform::new(&(-param));
 
         cc.draw_series(src.iter().map(|p| to_point(&(p[0], p[1]), &src_color)))

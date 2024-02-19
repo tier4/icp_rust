@@ -92,7 +92,7 @@ fn get_xy(xyz: &Vec<Vector3>) -> Vec<Vector2> {
     xyz.iter().map(f).collect::<Vec<Vector2>>()
 }
 
-pub fn icp_2d(initial_param: &Param, src: &Vec<Vector2>, dst: &Vec<Vector2>) -> Param {
+pub fn icp_2dscan(initial_param: &Param, src: &Vec<Vector2>, dst: &Vec<Vector2>) -> Param {
     let kdtree = kdtree::KdTree::new(dst);
     let max_iter: usize = 20;
 
@@ -114,7 +114,7 @@ pub fn icp_2d(initial_param: &Param, src: &Vec<Vector2>, dst: &Vec<Vector2>) -> 
     param
 }
 
-pub fn icp_3d(initial_param: &Param, src: &Vec<Vector3>, dst: &Vec<Vector3>) -> Param {
+pub fn icp_3dscan(initial_param: &Param, src: &Vec<Vector3>, dst: &Vec<Vector3>) -> Param {
     let kdtree = kdtree::KdTree::new(dst);
     let max_iter: usize = 20;
 
@@ -469,7 +469,7 @@ mod tests {
     }
 
     #[test]
-    fn test_icp_3d() {
+    fn test_icp_3dscan() {
         let src = vec![
             Vector3::new(0.0, 0.0, 2.0),
             Vector3::new(0.0, 0.1, 2.0),
@@ -504,13 +504,13 @@ mod tests {
 
         let diff = Param::new(0.05, 0.010, 0.010);
         let initial_param = true_param + diff;
-        let pred_param = icp_3d(&initial_param, &src, &dst);
+        let pred_param = icp_3dscan(&initial_param, &src, &dst);
 
         assert!((pred_param - true_param).norm() < 1e-3);
     }
 
     #[test]
-    fn test_icp_2d() {
+    fn test_icp_2dscan() {
         let src = vec![
             Vector2::new(0.0, 0.0),
             Vector2::new(0.0, 0.1),
@@ -545,7 +545,7 @@ mod tests {
 
         let diff = Param::new(0.05, 0.010, 0.010);
         let initial_param = true_param + diff;
-        let pred_param = icp_2d(&initial_param, &src, &dst);
+        let pred_param = icp_2dscan(&initial_param, &src, &dst);
 
         assert!((pred_param - true_param).norm() < 1e-3);
     }
@@ -655,6 +655,6 @@ mod tests {
         let diff = Param::new(0.000, 0.010, 0.010);
         let initial_param = true_param + diff;
 
-        b.iter(|| icp_3d(&initial_param, &src, &dst));
+        b.iter(|| icp_3dscan(&initial_param, &src, &dst));
     }
 }
