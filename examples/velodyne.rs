@@ -96,7 +96,7 @@ fn main() -> hdf5::Result<()> {
     let src_color = RGBColor(0xf1, 0x9c, 0xa7);
     let dst_color = RGBColor(0x00, 0x6e, 0xb0);
 
-    let scan = Scan::new("points/points5.hdf5")?;
+    let scan = Scan::new("scans/3d/scans.hdf5")?;
 
     let mut window: PistonWindow = WindowSettings::new("LiDAR scan", [WINDOW_SIZE, WINDOW_SIZE])
         .build()
