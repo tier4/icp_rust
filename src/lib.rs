@@ -92,7 +92,29 @@ fn get_xy(xyz: &Vec<Vector3>) -> Vec<Vector2> {
     xyz.iter().map(f).collect::<Vec<Vector2>>()
 }
 
-pub fn icp(initial_param: &Param, src: &Vec<Vector3>, dst: &Vec<Vector3>) -> Param {
+pub fn icp_2d(initial_param: &Param, src: &Vec<Vector2>, dst: &Vec<Vector2>) -> Param {
+    let kdtree = kdtree::KdTree::new(dst);
+    let max_iter: usize = 20;
+
+    let mut param: Param = *initial_param;
+    for _ in 0..max_iter {
+        let transform = Transform::new(&param);
+
+        let src_tranformed = src
+            .iter()
+            .map(|sp| transform.transform(&sp))
+            .collect::<Vec<Vector2>>();
+
+        let correspondence = kdtree::associate(&kdtree, &src_tranformed);
+        let (sp, dp) = kdtree::get_corresponding_points(&correspondence, &src_tranformed, dst);
+        let dparam = estimate_transform(&Param::zeros(), &sp, &dp);
+
+        param = dparam + param;
+    }
+    param
+}
+
+pub fn icp_3d(initial_param: &Param, src: &Vec<Vector3>, dst: &Vec<Vector3>) -> Param {
     let kdtree = kdtree::KdTree::new(dst);
     let max_iter: usize = 20;
 
@@ -447,7 +469,7 @@ mod tests {
     }
 
     #[test]
-    fn test_icp() {
+    fn test_icp_3d() {
         let src = vec![
             Vector3::new(0.0, 0.0, 2.0),
             Vector3::new(0.0, 0.1, 2.0),
@@ -482,7 +504,48 @@ mod tests {
 
         let diff = Param::new(0.05, 0.010, 0.010);
         let initial_param = true_param + diff;
-        let pred_param = icp(&initial_param, &src, &dst);
+        let pred_param = icp_3d(&initial_param, &src, &dst);
+
+        assert!((pred_param - true_param).norm() < 1e-3);
+    }
+
+    #[test]
+    fn test_icp_2d() {
+        let src = vec![
+            Vector2::new(0.0, 0.0),
+            Vector2::new(0.0, 0.1),
+            Vector2::new(0.0, 0.2),
+            Vector2::new(0.0, 0.3),
+            Vector2::new(0.0, 0.4),
+            Vector2::new(0.0, 0.5),
+            Vector2::new(0.0, 0.6),
+            Vector2::new(0.0, 0.7),
+            Vector2::new(0.0, 0.8),
+            Vector2::new(0.0, 0.9),
+            Vector2::new(0.0, 1.0),
+            Vector2::new(0.1, 0.0),
+            Vector2::new(0.2, 0.0),
+            Vector2::new(0.3, 0.0),
+            Vector2::new(0.4, 0.0),
+            Vector2::new(0.5, 0.0),
+            Vector2::new(0.6, 0.0),
+            Vector2::new(0.7, 0.0),
+            Vector2::new(0.8, 0.0),
+            Vector2::new(0.9, 0.0),
+            Vector2::new(1.0, 0.0),
+        ];
+
+        let true_param = Param::new(0.01, 0.01, -0.02);
+        let true_transform = Transform::new(&true_param);
+
+        let dst = src
+            .iter()
+            .map(|p| true_transform.transform(p))
+            .collect::<Vec<Vector2>>();
+
+        let diff = Param::new(0.05, 0.010, 0.010);
+        let initial_param = true_param + diff;
+        let pred_param = icp_2d(&initial_param, &src, &dst);
 
         assert!((pred_param - true_param).norm() < 1e-3);
     }
@@ -592,6 +655,6 @@ mod tests {
         let diff = Param::new(0.000, 0.010, 0.010);
         let initial_param = true_param + diff;
 
-        b.iter(|| icp(&initial_param, &src, &dst));
+        b.iter(|| icp_3d(&initial_param, &src, &dst));
     }
 }

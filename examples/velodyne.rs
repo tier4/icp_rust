@@ -129,7 +129,7 @@ fn main() -> hdf5::Result<()> {
             .build_cartesian_2d(-2.0..2.0, -3.0..1.0)
             .unwrap();
 
-        param = icp::icp(&param, &src, &dst);
+        param = icp::icp_3d(&param, &src, &dst);
         let inv_transform = icp::Transform::new(&(-param));
 
         cc.draw_series(src.iter().map(|p| to_point(&(p[0], p[1]), &src_color)))

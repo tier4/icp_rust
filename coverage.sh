@@ -21,14 +21,14 @@ function cleanup() {
 cleanup && \
     rm -rf coverage && \
     RUSTFLAGS="-C instrument-coverage" cargo test --tests && \
-    llvm-profdata merge -sparse *.profraw -o $name.profdata && \
-    llvm-cov report $object_option \
+    llvm-profdata-18 merge -sparse *.profraw -o $name.profdata && \
+    llvm-cov-18 report $object_option \
         --use-color \
         --ignore-filename-regex='/.cargo/registry' \
         --ignore-filename-regex='/rustc' \
         --summary-only  \
         --instr-profile=$name.profdata && \
-    llvm-cov show $object_option \
+    llvm-cov-18 show $object_option \
         --use-color \
         --ignore-filename-regex='/.cargo/registry' \
         --ignore-filename-regex='/rustc' \

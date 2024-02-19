@@ -1,4 +1,3 @@
-use nalgebra::{Vector2, Vector3};
 use piston_window::{EventLoop, PistonWindow, WindowSettings};
 use plotters::drawing::IntoDrawingArea;
 use plotters::prelude::{ChartBuilder, Circle, LineSeries, RGBColor, BLUE, GREEN, RED, WHITE};
@@ -18,7 +17,7 @@ where
     Ok(std::io::BufReader::new(file).lines())
 }
 
-fn load_scan(lines: std::io::Lines<std::io::BufReader<File>>) -> Vec<Vector3<f64>> {
+fn load_scan(lines: std::io::Lines<std::io::BufReader<File>>) -> Vec<icp::Vector2> {
     let mut scan_landmarks = vec![];
     for line in lines {
         let s = match line {
@@ -31,35 +30,27 @@ fn load_scan(lines: std::io::Lines<std::io::BufReader<File>>) -> Vec<Vector3<f64
         let xy = s.split(" ").collect::<Vec<_>>();
         let x = xy[0].parse().unwrap();
         let y = xy[1].parse().unwrap();
-        scan_landmarks.push(Vector3::new(x, y, 0.));
+        scan_landmarks.push(icp::Vector2::new(x, y));
     }
     return scan_landmarks;
 }
 
-fn to_point(p: &Vector2<f64>, color: &RGBColor) -> Circle<(f64, f64), u32> {
+fn to_point(p: &icp::Vector2, color: &RGBColor) -> Circle<(f64, f64), u32> {
     Circle::new((p[0], p[1]), 2, color.mix(0.7).filled())
 }
 
 fn axis_lines(
     transform: &icp::Transform,
     length: f64,
-) -> (Vector2<f64>, Vector2<f64>, Vector2<f64>) {
-    // Vec<LineSeries<PistonBackend, (f64, f64)>> {
-
+) -> (icp::Vector2, icp::Vector2, icp::Vector2) {
     let rot = transform.rot;
     let t = transform.t;
-    let x = Vector2::new(length, 0.);
-    let y = Vector2::new(0., length);
+    let x = icp::Vector2::new(length, 0.);
+    let y = icp::Vector2::new(0., length);
 
     let xp = rot * x + t;
     let yp = rot * y + t;
     (t, xp, yp)
-    // vec![LineSeries::new(vec![(t[0], t[1]), (xp[0], xp[1])], RED),
-    //      LineSeries::new(vec![(t[0], t[1]), (yp[0], yp[1])], GREEN)]
-}
-
-fn get_xy(p: &Vector3<f64>) -> Vector2<f64> {
-    Vector2::new(p[0], p[1])
 }
 
 const WINDOW_RANGE: f64 = 3000.;
@@ -75,7 +66,7 @@ fn main() {
 
     let mut param = icp::Param::zeros();
 
-    let mut path: Vec<Vector2<f64>> = vec![];
+    let mut path: Vec<icp::Vector2> = vec![];
     let mut draw = |b: PistonBackend| -> Result<(), Box<dyn std::error::Error>> {
         index += 1;
         let filename = format!("scans/{}.txt", index);
@@ -95,13 +86,13 @@ fn main() {
 
         let dst = load_scan(lines);
 
-        param = icp::icp(&param, &src, &dst);
+        param = icp::icp_2d(&param, &src, &dst);
         let inv_transform = icp::Transform::new(&(-param));
 
-        cc.draw_series(src.iter().map(|p| to_point(&get_xy(p), &BLUE)))
+        cc.draw_series(src.iter().map(|p| to_point(&p, &BLUE)))
             .unwrap();
         cc.draw_series(dst.iter().map(|p| {
-            let b = inv_transform.transform(&get_xy(p));
+            let b = inv_transform.transform(&p);
             to_point(&b, &GREEN)
         }))
         .unwrap();
@@ -111,7 +102,7 @@ fn main() {
             .unwrap();
         cc.draw_series(LineSeries::new(vec![(t[0], t[1]), (yp[0], yp[1])], BLUE))
             .unwrap();
-        path.push(Vector2::new(inv_transform.t[0], inv_transform.t[1]));
+        path.push(icp::Vector2::new(inv_transform.t[0], inv_transform.t[1]));
 
         for i in 0..(path.len() - 1) {
             let p0 = path[i + 0];
