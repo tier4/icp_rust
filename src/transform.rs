@@ -45,4 +45,14 @@ mod tests {
         let expected = Vector2::new(-2. + 3., 4. + 6.);
         assert!((transform.transform(&x) - expected).norm() < 1e-8);
     }
+
+    #[test]
+    fn test_inverse() {
+        let r = Rotation2::new(FRAC_PI_2);
+        let t = Vector2::new(3., 6.);
+        let transform = Transform::from_rt(&r, &t).inverse();
+        let x = Vector2::new(-2. + 3., 4. + 6.);
+        let expected = Vector2::new(4., 2.);
+        assert!((transform.transform(&x) - expected).norm() < 1e-8);
+    }
 }
