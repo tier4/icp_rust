@@ -1,6 +1,8 @@
 use crate::se2;
 use crate::types::{Rotation2, Vector2, Vector3};
 
+use core::ops::Mul;
+
 pub struct Transform {
     pub rot: Rotation2,
     pub t: Vector2,
@@ -29,11 +31,22 @@ impl Transform {
     }
 }
 
+impl Mul for Transform {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self {
+        Transform {
+            rot: self.rot * rhs.rot,
+            t: self.rot * rhs.t + self.t,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use core::f64::consts::FRAC_PI_2;
+    use core::f64::consts::{FRAC_PI_2, FRAC_PI_4};
 
     #[test]
     fn test_transform() {
@@ -54,5 +67,21 @@ mod tests {
         let x = Vector2::new(-2. + 3., 4. + 6.);
         let expected = Vector2::new(4., 2.);
         assert!((transform.transform(&x) - expected).norm() < 1e-8);
+    }
+
+    #[test]
+    fn test_mul() {
+        let r1 = Rotation2::new(FRAC_PI_4);
+        let t1 = Vector2::new(2., 1.);
+        let r2 = Rotation2::new(FRAC_PI_2);
+        let t2 = Vector2::new(5., 3.);
+        let transform1 = Transform::from_rt(&r1, &t1).inverse();
+        let transform2 = Transform::from_rt(&r2, &t2).inverse();
+
+        let x = Vector2::new(-5., 6.);
+        let pa = transform1.transform(&transform2.transform(&x));
+        let pb = (transform1 * transform2).transform(&x);
+
+        assert!((pa - pb).norm() < 1e-8);
     }
 }
