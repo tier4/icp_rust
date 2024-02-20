@@ -14,22 +14,18 @@ pub mod se2;
 pub mod so2;
 pub mod transform;
 
-mod geometry;
 mod huber;
 mod kdtree;
 mod linalg;
 mod stats;
 mod types;
 
-use crate::geometry::Rotation;
 pub use crate::transform::Transform;
+pub use crate::types::{Rotation2, Vector2, Vector3};
 
 pub type Param = nalgebra::Vector3<f64>;
 type Jacobian = nalgebra::Matrix2x3<f64>;
 type Hessian = nalgebra::Matrix3<f64>;
-
-pub type Vector2 = types::Vector<2>;
-pub type Vector3 = types::Vector<3>;
 
 const HUBER_K: f64 = 1.345;
 
@@ -136,14 +132,14 @@ pub fn icp_3dscan(initial_param: &Param, src: &Vec<Vector3>, dst: &Vec<Vector3>)
     param
 }
 
-fn jacobian(rot: &Rotation<2>, landmark: &Vector2) -> Jacobian {
+fn jacobian(rot: &Rotation2, landmark: &Vector2) -> Jacobian {
     let a = Vector2::new(-landmark[1], landmark[0]);
-    let rot = rot;
+    let r = rot.matrix();
     let b = rot * a;
     #[rustfmt::skip]
     Jacobian::new(
-        rot[(0, 0)], rot[(0, 1)], b[0],
-        rot[(1, 0)], rot[(1, 1)], b[1])
+        r[(0, 0)], r[(0, 1)], b[0],
+        r[(1, 0)], r[(1, 1)], b[1])
 }
 
 fn check_input_size(input: &Vec<Vector2>) -> bool {
