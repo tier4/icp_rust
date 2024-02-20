@@ -1,10 +1,10 @@
-use nalgebra::{Matrix2, Matrix3, Vector2, Vector3};
+pub use crate::types::{Matrix2, Matrix3, Rotation2, Vector2, Vector3};
 
 use core::f64::consts;
 
 use crate::so2;
 
-pub fn get_rt(transform: &Matrix3<f64>) -> (Matrix2<f64>, Vector2<f64>) {
+pub fn get_rt(transform: &Matrix3) -> (Matrix2, Vector2) {
     #[rustfmt::skip]
     let rot = Matrix2::new(
         transform[(0, 0)], transform[(0, 1)],
@@ -14,16 +14,12 @@ pub fn get_rt(transform: &Matrix3<f64>) -> (Matrix2<f64>, Vector2<f64>) {
     (rot, t)
 }
 
-pub fn calc_rt(param: &Vector3<f64>) -> (Matrix2<f64>, Vector2<f64>) {
+pub fn calc_rt(param: &Vector3) -> (Rotation2, Vector2) {
     let theta = param[2];
+    let rot = Rotation2::new(theta);
+
     let cos = f64::cos(theta);
     let sin = f64::sin(theta);
-
-    #[rustfmt::skip]
-    let rot = Matrix2::new(
-        cos, -sin,
-        sin, cos,
-    );
 
     let vx = param[0];
     let vy = param[1];
@@ -39,7 +35,7 @@ pub fn calc_rt(param: &Vector3<f64>) -> (Matrix2<f64>, Vector2<f64>) {
     (rot, t)
 }
 
-pub fn exp(param: &Vector3<f64>) -> Matrix3<f64> {
+pub fn exp(param: &Vector3) -> Matrix3 {
     let (rot, t) = calc_rt(param);
 
     #[rustfmt::skip]
@@ -50,9 +46,9 @@ pub fn exp(param: &Vector3<f64>) -> Matrix3<f64> {
     )
 }
 
-pub fn log(transform: &Matrix3<f64>) -> Vector3<f64> {
+pub fn log(transform: &Matrix3) -> Vector3 {
     let (rot, t) = get_rt(transform);
-    let theta = so2::log(rot);
+    let theta = so2::log(&rot);
     let v_inv = if theta == 0. {
         Matrix2::identity()
     } else if theta == consts::PI {

@@ -62,7 +62,7 @@ fn main() {
     let mut src = vec![];
     let mut index = 0;
 
-    let mut param = icp::Param::zeros();
+    let mut transform = icp::Transform::identity();
 
     let mut path: Vec<icp::Vector2> = vec![];
     let mut draw = |b: PistonBackend| -> Result<(), Box<dyn std::error::Error>> {
@@ -84,8 +84,8 @@ fn main() {
 
         let dst = load_scan(lines);
 
-        param = icp::icp_2dscan(&param, &src, &dst);
-        let inv_transform = icp::Transform::new(&(-param));
+        transform = icp::icp_2dscan(&transform, &src, &dst);
+        let inv_transform = transform.inverse();
 
         cc.draw_series(src.iter().map(|p| to_point(&p, &BLUE)))
             .unwrap();

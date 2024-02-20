@@ -58,6 +58,8 @@ pub fn calc_stddevs<const D: usize>(residuals: &Vec<Vector<D>>) -> Option<[f64; 
 mod tests {
     use super::*;
 
+    use crate::types::Vector2;
+
     #[test]
     fn test_mutable_median() {
         let mut input = vec![-9., -6., -4., -1., -6., 5., 8., 5., 5., 4.];
@@ -130,40 +132,38 @@ mod tests {
 
     #[test]
     fn test_calc_stddevs() {
-        type Measurement = nalgebra::Vector2<f64>;
-
         #[rustfmt::skip]
         let measurements = vec![
-            Measurement::new(53.72201757, 52.99126564),
-            Measurement::new(47.10884813, 53.59975516),
-            Measurement::new(39.39661665, 61.08762518),
-            Measurement::new(62.81692917, 54.56765183),
-            Measurement::new(39.26208329, 45.65102341),
-            Measurement::new(50.86473295, 44.72763481),
-            Measurement::new(39.28791948, 34.88506328),
-            Measurement::new(55.25576933, 39.59323902),
-            Measurement::new(36.75721579, 57.17795218),
-            Measurement::new(30.13909168, 64.76416708),
-            Measurement::new(44.81493956, 54.94041174),
-            Measurement::new(53.88324537, 60.4374775 ),
-            Measurement::new(47.88396982, 66.59441293),
-            Measurement::new(64.42865488, 40.9932948 ),
-            Measurement::new(44.81265264, 50.45413795),
-            Measurement::new(53.19558104, 28.24225202),
-            Measurement::new(55.95984582, 65.33672375),
-            Measurement::new(59.05920996, 27.61279324),
-            Measurement::new(46.8073715 , 30.79477285),
-            Measurement::new(39.59866249, 45.6226116 ),
-            Measurement::new(49.15739909, 55.53557656),
-            Measurement::new(43.24838042, 43.95231977),
-            Measurement::new(54.78299967, 40.5593425 ),
-            Measurement::new(41.9153867 , 55.54639181),
-            Measurement::new(52.18015184, 46.38912455),
-            Measurement::new(29.59992903, 46.32180761),
-            Measurement::new(75.51275641, 57.73265648),
-            Measurement::new(61.78180837, 54.48655747),
-            Measurement::new(72.17828583, 66.37805296),
-            Measurement::new(41.72995451, 50.9864875 )
+            Vector2::new(53.72201757, 52.99126564),
+            Vector2::new(47.10884813, 53.59975516),
+            Vector2::new(39.39661665, 61.08762518),
+            Vector2::new(62.81692917, 54.56765183),
+            Vector2::new(39.26208329, 45.65102341),
+            Vector2::new(50.86473295, 44.72763481),
+            Vector2::new(39.28791948, 34.88506328),
+            Vector2::new(55.25576933, 39.59323902),
+            Vector2::new(36.75721579, 57.17795218),
+            Vector2::new(30.13909168, 64.76416708),
+            Vector2::new(44.81493956, 54.94041174),
+            Vector2::new(53.88324537, 60.4374775 ),
+            Vector2::new(47.88396982, 66.59441293),
+            Vector2::new(64.42865488, 40.9932948 ),
+            Vector2::new(44.81265264, 50.45413795),
+            Vector2::new(53.19558104, 28.24225202),
+            Vector2::new(55.95984582, 65.33672375),
+            Vector2::new(59.05920996, 27.61279324),
+            Vector2::new(46.8073715 , 30.79477285),
+            Vector2::new(39.59866249, 45.6226116 ),
+            Vector2::new(49.15739909, 55.53557656),
+            Vector2::new(43.24838042, 43.95231977),
+            Vector2::new(54.78299967, 40.5593425 ),
+            Vector2::new(41.9153867 , 55.54639181),
+            Vector2::new(52.18015184, 46.38912455),
+            Vector2::new(29.59992903, 46.32180761),
+            Vector2::new(75.51275641, 57.73265648),
+            Vector2::new(61.78180837, 54.48655747),
+            Vector2::new(72.17828583, 66.37805296),
+            Vector2::new(41.72995451, 50.9864875 )
         ];
         let Some(stddevs) = calc_stddevs(&measurements) else {
             panic!();
