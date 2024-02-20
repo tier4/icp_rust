@@ -12,5 +12,6 @@ Linux x86_64
 
 ```
 $ rustup toolchain install nightly-x86_64-unknown-linux-gnu
-$ cargo run --example scans --release
+$ cargo run --example scan2d --release   # 2D scan example
+$ cargo run --example scan3d --release   # 3D scan example
 ```
