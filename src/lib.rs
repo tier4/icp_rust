@@ -7,76 +7,58 @@ extern crate alloc;
 extern crate test;
 
 use alloc::vec::Vec;
-use kiddo::float::distance::SquaredEuclidean;
-use kiddo::float::kdtree::KdTree;
 
 use nalgebra::Cholesky;
 
 pub mod se2;
 pub mod so2;
+pub mod transform;
 
+mod geometry;
 mod huber;
+mod kdtree;
+mod linalg;
 mod stats;
+mod types;
+
+use crate::geometry::Rotation;
+pub use crate::transform::Transform;
 
 pub type Param = nalgebra::Vector3<f64>;
-pub type Transform = nalgebra::Matrix3<f64>;
-pub type Rotation = nalgebra::Matrix2<f64>;
-pub type Translation = nalgebra::Vector2<f64>;
-pub type Measurement = nalgebra::Vector2<f64>;
 type Jacobian = nalgebra::Matrix2x3<f64>;
 type Hessian = nalgebra::Matrix3<f64>;
 
-type Tree = KdTree<f64, usize, 2, 64, u32>;
+pub type Vector2 = types::Vector<2>;
+pub type Vector3 = types::Vector<3>;
 
 const HUBER_K: f64 = 1.345;
 
-fn make_kdtree(landmarks: &Vec<Measurement>) -> Tree {
-    let mut kdtree: Tree = KdTree::with_capacity(landmarks.len());
-    landmarks.iter().enumerate().for_each(|(i, landmark)| {
-        let array: [f64; 2] = (*landmark).into();
-        kdtree.add(&array, i);
-    });
-    kdtree
+pub fn residual(transform: &Transform, src: &Vector2, dst: &Vector2) -> Vector2 {
+    transform.transform(src) - dst
 }
 
-fn associate(kdtree: &Tree, src: &Vec<Measurement>) -> Vec<(usize, usize)> {
-    let mut correspondence = vec![];
-    for (query_index, query) in src.iter().enumerate() {
-        let p: [f64; 2] = (*query).into();
-        let nearest = kdtree.nearest_one::<SquaredEuclidean>(&p);
-        correspondence.push((query_index, nearest.item));
-    }
-    correspondence
-}
-
-pub fn transform(param: &Param, landmark: &Measurement) -> Measurement {
-    let (rot, t) = se2::calc_rt(param);
-    rot * landmark + t
-}
-
-pub fn residual(param: &Param, src: &Measurement, dst: &Measurement) -> Measurement {
-    transform(param, src) - dst
-}
-
-pub fn error(param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>) -> f64 {
+pub fn error(transform: &Transform, src: &Vec<Vector2>, dst: &Vec<Vector2>) -> f64 {
     src.iter().zip(dst.iter()).fold(0f64, |sum, (s, d)| {
-        let r = residual(param, s, d);
+        let r = residual(transform, s, d);
         sum + r.dot(&r)
     })
 }
 
-pub fn huber_error(param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>) -> f64 {
+pub fn huber_error(transform: &Transform, src: &Vec<Vector2>, dst: &Vec<Vector2>) -> f64 {
     src.iter().zip(dst.iter()).fold(0f64, |sum, (s, d)| {
-        let r = residual(param, s, d);
+        let r = residual(transform, s, d);
         sum + huber::rho(r.dot(&r), HUBER_K)
     })
 }
 
-pub fn estimate_transform(
-    initial_param: &Param,
-    src: &Vec<Measurement>,
-    dst: &Vec<Measurement>,
-) -> Param {
+fn transform_xy(transform: &Transform, sp: &Vector3) -> Vector3 {
+    let z = sp[2];
+    let sxy = Vector2::new(sp[0], sp[1]);
+    let dxy = transform.transform(&sxy);
+    Vector3::new(dxy[0], dxy[1], z)
+}
+
+pub fn estimate_transform(initial_param: &Param, src: &Vec<Vector2>, dst: &Vec<Vector2>) -> Param {
     let delta_norm_threshold: f64 = 1e-6;
     let max_iter: usize = 200;
 
@@ -84,16 +66,16 @@ pub fn estimate_transform(
 
     let mut param = *initial_param;
     for _ in 0..max_iter {
-        let delta = match weighted_gauss_newton_update(&param, &src, &dst) {
-            Some(d) => d,
-            None => break,
+        let transform = Transform::new(&param);
+        let Some(delta) = weighted_gauss_newton_update(&transform, &src, &dst) else {
+            break;
         };
 
         if delta.norm_squared() < delta_norm_threshold {
             break;
         }
 
-        let error = huber_error(&param, src, dst);
+        let error = huber_error(&transform, src, dst);
         if error > prev_error {
             break;
         }
@@ -105,35 +87,26 @@ pub fn estimate_transform(
     param
 }
 
-fn get_corresponding_points(
-    correspondence: &Vec<(usize, usize)>,
-    src: &Vec<Measurement>,
-    dst: &Vec<Measurement>,
-) -> (Vec<Measurement>, Vec<Measurement>) {
-    let src_points = correspondence
-        .iter()
-        .map(|(src_index, _)| src[*src_index])
-        .collect::<Vec<_>>();
-    let dst_points = correspondence
-        .iter()
-        .map(|(_, dst_index)| dst[*dst_index])
-        .collect::<Vec<_>>();
-    (src_points, dst_points)
+fn get_xy(xyz: &Vec<Vector3>) -> Vec<Vector2> {
+    let f = |p: &Vector3| Vector2::new(p[0], p[1]);
+    xyz.iter().map(f).collect::<Vec<Vector2>>()
 }
 
-pub fn icp(initial_param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>) -> Param {
-    let kdtree = make_kdtree(dst);
+pub fn icp_2dscan(initial_param: &Param, src: &Vec<Vector2>, dst: &Vec<Vector2>) -> Param {
+    let kdtree = kdtree::KdTree::new(dst);
     let max_iter: usize = 20;
 
     let mut param: Param = *initial_param;
     for _ in 0..max_iter {
+        let transform = Transform::new(&param);
+
         let src_tranformed = src
             .iter()
-            .map(|sp| transform(&param, &sp))
-            .collect::<Vec<Measurement>>();
+            .map(|sp| transform.transform(&sp))
+            .collect::<Vec<Vector2>>();
 
-        let correspondence = associate(&kdtree, &src_tranformed);
-        let (sp, dp) = get_corresponding_points(&correspondence, &src_tranformed, dst);
+        let correspondence = kdtree::associate(&kdtree, &src_tranformed);
+        let (sp, dp) = kdtree::get_corresponding_points(&correspondence, &src_tranformed, dst);
         let dparam = estimate_transform(&Param::zeros(), &sp, &dp);
 
         param = dparam + param;
@@ -141,37 +114,31 @@ pub fn icp(initial_param: &Param, src: &Vec<Measurement>, dst: &Vec<Measurement>
     param
 }
 
-pub fn inverse_3x3(matrix: &nalgebra::Matrix3<f64>) -> Option<nalgebra::Matrix3<f64>> {
-    let m00 = matrix[(0, 0)];
-    let m01 = matrix[(0, 1)];
-    let m02 = matrix[(0, 2)];
-    let m10 = matrix[(1, 0)];
-    let m11 = matrix[(1, 1)];
-    let m12 = matrix[(1, 2)];
-    let m20 = matrix[(2, 0)];
-    let m21 = matrix[(2, 1)];
-    let m22 = matrix[(2, 2)];
+pub fn icp_3dscan(initial_param: &Param, src: &Vec<Vector3>, dst: &Vec<Vector3>) -> Param {
+    let kdtree = kdtree::KdTree::new(dst);
+    let max_iter: usize = 20;
 
-    #[rustfmt::skip]
-    let det = m00 * (m22 * m11 - m21 * m12)
-            - m10 * (m22 * m01 - m21 * m02)
-            + m20 * (m12 * m01 - m11 * m02);
-    if det == 0f64 {
-        return None;
+    let mut param: Param = *initial_param;
+    for _ in 0..max_iter {
+        let transform = Transform::new(&param);
+
+        let src_tranformed = src
+            .iter()
+            .map(|sp| transform_xy(&transform, &sp))
+            .collect::<Vec<Vector3>>();
+
+        let correspondence = kdtree::associate(&kdtree, &src_tranformed);
+        let (sp, dp) = kdtree::get_corresponding_points(&correspondence, &src_tranformed, dst);
+        let dparam = estimate_transform(&Param::zeros(), &get_xy(&sp), &get_xy(&dp));
+
+        param = dparam + param;
     }
-
-    #[rustfmt::skip]
-    let mat = nalgebra::Matrix3::new(
-        m22 * m11 - m21 * m12, -(m22 * m01 - m21 * m02), m12 * m01 - m11 * m02,
-        -(m22 * m10 - m20 * m12), m22 * m00 - m20 * m02, -(m12 * m00 - m10 * m02),
-        m21 * m10 - m20 * m11, -(m21 * m00 - m20 * m01), m11 * m00 - m10 * m01,
-    );
-    Some(mat / det)
+    param
 }
 
-fn jacobian(param: &Param, landmark: &Measurement) -> Jacobian {
-    let a = nalgebra::Vector2::new(-landmark[1], landmark[0]);
-    let (rot, _t) = se2::calc_rt(param);
+fn jacobian(rot: &Rotation<2>, landmark: &Vector2) -> Jacobian {
+    let a = Vector2::new(-landmark[1], landmark[0]);
+    let rot = rot;
     let b = rot * a;
     #[rustfmt::skip]
     Jacobian::new(
@@ -179,15 +146,15 @@ fn jacobian(param: &Param, landmark: &Measurement) -> Jacobian {
         rot[(1, 0)], rot[(1, 1)], b[1])
 }
 
-fn check_input_size(input: &Vec<Measurement>) -> bool {
+fn check_input_size(input: &Vec<Vector2>) -> bool {
     // Check if the input does not have sufficient samples to estimate the update
     input.len() > 0 && input.len() >= input[0].len()
 }
 
 pub fn gauss_newton_update(
-    param: &Param,
-    src: &Vec<Measurement>,
-    dst: &Vec<Measurement>,
+    transform: &Transform,
+    src: &Vec<Vector2>,
+    dst: &Vec<Vector2>,
 ) -> Option<Param> {
     if !check_input_size(&src) {
         // The input does not have sufficient samples to estimate the update
@@ -197,8 +164,8 @@ pub fn gauss_newton_update(
     let (jtr, jtj) = src.iter().zip(dst.iter()).fold(
         (Param::zeros(), Hessian::zeros()),
         |(jtr, jtj), (s, d)| {
-            let j = jacobian(param, s);
-            let r = transform(param, s) - d;
+            let j = jacobian(&transform.rot, s);
+            let r = transform.transform(s) - d;
             let jtr_: Param = j.transpose() * r;
             let jtj_: Hessian = j.transpose() * j;
             (jtr + jtr_, jtj + jtj_)
@@ -209,26 +176,10 @@ pub fn gauss_newton_update(
     Some(-update)
 }
 
-fn calc_stddevs(residuals: &Vec<Measurement>) -> Option<Vec<f64>> {
-    debug_assert!(residuals.len() > 0);
-    let dimension = residuals[0].nrows();
-    let mut stddevs = vec![0f64; dimension];
-    for j in 0..dimension {
-        let mut jth_dim = residuals.iter().map(|r| r[j]).collect::<Vec<_>>();
-        let stddev = stats::mutable_standard_deviation(&mut jth_dim);
-
-        stddevs[j] = match stddev {
-            Some(s) => s,
-            None => return None,
-        };
-    }
-    Some(stddevs)
-}
-
 pub fn weighted_gauss_newton_update(
-    param: &Param,
-    src: &Vec<Measurement>,
-    dst: &Vec<Measurement>,
+    transform: &Transform,
+    src: &Vec<Vector2>,
+    dst: &Vec<Vector2>,
 ) -> Option<Param> {
     debug_assert_eq!(src.len(), dst.len());
 
@@ -240,18 +191,17 @@ pub fn weighted_gauss_newton_update(
     let residuals = src
         .iter()
         .zip(dst.iter())
-        .map(|(s, d)| residual(param, s, d))
+        .map(|(s, d)| residual(transform, s, d))
         .collect::<Vec<_>>();
 
-    let stddevs = match calc_stddevs(&residuals) {
-        Some(m) => m,
-        None => return None,
+    let Some(stddevs) = stats::calc_stddevs(&residuals) else {
+        return None;
     };
 
     let mut jtr = Param::zeros();
     let mut jtj = Hessian::zeros();
     for (s, r) in src.iter().zip(residuals.iter()) {
-        let jacobian_i = jacobian(param, s);
+        let jacobian_i = jacobian(&transform.rot, s);
         for (j, jacobian_ij) in jacobian_i.row_iter().enumerate() {
             if stddevs[j] == 0. {
                 continue;
@@ -265,7 +215,7 @@ pub fn weighted_gauss_newton_update(
         }
     }
 
-    match inverse_3x3(&jtj) {
+    match linalg::inverse3x3(&jtj) {
         Some(jtj_inv) => return Some(-jtj_inv * jtr),
         None => return None,
     }
@@ -277,91 +227,55 @@ mod tests {
 
     #[test]
     fn test_residual() {
-        let param: Param = nalgebra::Vector3::new(-10., 20., 0.01);
-        let src = nalgebra::Vector2::new(7f64, 8f64);
-        let dst = transform(&param, &src);
-        assert_eq!(residual(&param, &src, &dst), nalgebra::Vector2::zeros());
+        let param: Param = Vector3::new(-10., 20., 0.01);
+        let transform = Transform::new(&param);
+        let src = Vector2::new(7f64, 8f64);
+        let dst = transform.transform(&src);
+        assert_eq!(residual(&transform, &src, &dst), Vector2::zeros());
     }
 
     #[test]
     fn test_error() {
         let src = vec![
-            Measurement::new(-6., 9.),
-            Measurement::new(-1., 9.),
-            Measurement::new(-4., -4.),
+            Vector2::new(-6., 9.),
+            Vector2::new(-1., 9.),
+            Vector2::new(-4., -4.),
         ];
 
         let dst = vec![
-            Measurement::new(-4., 4.),
-            Measurement::new(0., 3.),
-            Measurement::new(-3., -8.),
+            Vector2::new(-4., 4.),
+            Vector2::new(0., 3.),
+            Vector2::new(-3., -8.),
         ];
 
-        let param: Param = nalgebra::Vector3::new(10., 20., 0.01);
-        let r0 = residual(&param, &src[0], &dst[0]);
-        let r1 = residual(&param, &src[1], &dst[1]);
-        let r2 = residual(&param, &src[2], &dst[2]);
+        let param: Param = Vector3::new(10., 20., 0.01);
+        let transform = Transform::new(&param);
+        let r0 = residual(&transform, &src[0], &dst[0]);
+        let r1 = residual(&transform, &src[1], &dst[1]);
+        let r2 = residual(&transform, &src[2], &dst[2]);
         let expected = r0.norm_squared() + r1.norm_squared() + r2.norm_squared();
-        assert_eq!(error(&param, &src, &dst), expected);
-    }
-
-    #[test]
-    fn test_inverse_3x3() {
-        let identity = nalgebra::Matrix3::identity();
-
-        #[rustfmt::skip]
-        let matrix = nalgebra::Matrix3::new(
-            -3.64867356, 0.11236464, -7.60555263,
-            -3.56881707, -9.77855129, 0.50475873,
-            -9.34728378, 0.25373179, -7.55422161,
-        );
-        let inverse = match inverse_3x3(&matrix) {
-            Some(inverse) => inverse,
-            None => panic!("Should return Some(inverse_matrix)"),
-        };
-        assert!((inverse * matrix - identity).norm() < 1e-14);
-
-        assert!(inverse_3x3(&nalgebra::Matrix3::zeros()).is_none());
-
-        #[rustfmt::skip]
-        let matrix = nalgebra::Matrix3::new(
-            3.0, 1.0, 2.0,
-            6.0, 2.0, 4.0,
-            9.0, 9.0, 7.0,
-        );
-        assert!(inverse_3x3(&matrix).is_none());
-
-        #[rustfmt::skip]
-        let matrix = nalgebra::Matrix3::new(
-            3.00792510e-38, -1.97985750e-45, 3.61627897e-44,
-            7.09699991e-49, -3.08764937e-49, -8.31427092e-41,
-            2.03723891e-42, -3.84594910e-42, 1.00872600e-40,
-        );
-        let inverse = match inverse_3x3(&matrix) {
-            Some(inverse) => inverse,
-            None => panic!("Should return Some(inverse_matrix)"),
-        };
-        assert!((inverse * matrix - identity).norm() < 1e-14);
+        assert_eq!(error(&transform, &src, &dst), expected);
     }
 
     #[test]
     fn test_gauss_newton_update_input_size() {
         let param = Param::new(10.0, 30.0, -0.15);
+        let transform = Transform::new(&param);
 
         let src = vec![];
         let dst = vec![];
-        assert!(gauss_newton_update(&param, &src, &dst).is_none());
+        assert!(gauss_newton_update(&transform, &src, &dst).is_none());
 
-        let src = vec![Measurement::new(-8.89304516, 0.54202289)];
-        let dst = vec![transform(&param, &src[0])];
-        assert!(gauss_newton_update(&param, &src, &dst).is_none());
+        let src = vec![Vector2::new(-8.89304516, 0.54202289)];
+        let dst = vec![transform.transform(&src[0])];
+        assert!(gauss_newton_update(&transform, &src, &dst).is_none());
 
         let src = vec![
-            Measurement::new(-8.89304516, 0.54202289),
-            Measurement::new(-4.03198385, -2.81807802),
+            Vector2::new(-8.89304516, 0.54202289),
+            Vector2::new(-4.03198385, -2.81807802),
         ];
-        let dst = vec![transform(&param, &src[0]), transform(&param, &src[1])];
-        assert!(gauss_newton_update(&param, &src, &dst).is_some());
+        let dst = vec![transform.transform(&src[0]), transform.transform(&src[1])];
+        assert!(gauss_newton_update(&transform, &src, &dst).is_some());
     }
 
     #[test]
@@ -369,101 +283,108 @@ mod tests {
         let true_param = Param::new(10.0, 30.0, -0.15);
         let dparam = Param::new(0.3, -0.5, 0.001);
         let initial_param = true_param + dparam;
+        let true_transform = Transform::new(&true_param);
+        let initial_transform = Transform::new(&initial_param);
 
         let src = vec![
-            Measurement::new(-8.76116663, 3.50338231),
-            Measurement::new(-5.21184804, -1.91561705),
-            Measurement::new(6.63141168, 4.8915293),
-            Measurement::new(-2.29215281, -4.72658399),
-            Measurement::new(6.81352587, -0.81624617),
+            Vector2::new(-8.76116663, 3.50338231),
+            Vector2::new(-5.21184804, -1.91561705),
+            Vector2::new(6.63141168, 4.8915293),
+            Vector2::new(-2.29215281, -4.72658399),
+            Vector2::new(6.81352587, -0.81624617),
         ];
         let dst = src
             .iter()
-            .map(|p| transform(&true_param, p))
+            .map(|p| true_transform.transform(&p))
             .collect::<Vec<_>>();
 
-        let update = match gauss_newton_update(&initial_param, &src, &dst) {
-            Some(s) => s,
-            None => panic!("Return value cannot be None"),
+        let Some(update) = gauss_newton_update(&initial_transform, &src, &dst) else {
+            panic!("Return value cannot be None");
         };
         let updated_param = initial_param + update;
 
-        let e0 = error(&initial_param, &src, &dst);
-        let e1 = error(&updated_param, &src, &dst);
+        let initial_transform = Transform::new(&initial_param);
+        let updated_transform = Transform::new(&updated_param);
+
+        let e0 = error(&initial_transform, &src, &dst);
+        let e1 = error(&updated_transform, &src, &dst);
         assert!(e1 < e0 * 0.01);
     }
 
     #[test]
     fn test_weighted_gauss_newton_update_input_size() {
         let param = Param::new(10.0, 30.0, -0.15);
+        let transform = Transform::new(&param);
 
         // insufficient input size
         let src = vec![];
         let dst = vec![];
-        assert!(weighted_gauss_newton_update(&param, &src, &dst).is_none());
+        assert!(weighted_gauss_newton_update(&transform, &src, &dst).is_none());
 
         // insufficient input size
-        let src = vec![Measurement::new(-8.89304516, 0.54202289)];
-        let dst = vec![transform(&param, &src[0])];
-        assert!(weighted_gauss_newton_update(&param, &src, &dst).is_none());
+        let src = vec![Vector2::new(-8.89304516, 0.54202289)];
+        let dst = vec![transform.transform(&src[0])];
+        assert!(weighted_gauss_newton_update(&transform, &src, &dst).is_none());
 
         // insufficient input size
         let src = vec![
-            Measurement::new(-8.89304516, 0.54202289),
-            Measurement::new(-4.03198385, -2.81807802),
+            Vector2::new(-8.89304516, 0.54202289),
+            Vector2::new(-4.03198385, -2.81807802),
         ];
-        let dst = vec![transform(&param, &src[0]), transform(&param, &src[1])];
-        assert!(weighted_gauss_newton_update(&param, &src, &dst).is_none());
+        let dst = vec![transform.transform(&src[0]), transform.transform(&src[1])];
+        assert!(weighted_gauss_newton_update(&transform, &src, &dst).is_none());
 
         // sufficient input size but rank is insufficient
         let src = vec![
-            Measurement::new(-8.89304516, 0.54202289),
-            Measurement::new(-4.03198385, -2.81807802),
-            Measurement::new(-4.03198385, -2.81807802),
+            Vector2::new(-8.89304516, 0.54202289),
+            Vector2::new(-4.03198385, -2.81807802),
+            Vector2::new(-4.03198385, -2.81807802),
         ];
         let dst = vec![
-            transform(&param, &src[0]),
-            transform(&param, &src[1]),
-            transform(&param, &src[2]),
+            transform.transform(&src[0]),
+            transform.transform(&src[1]),
+            transform.transform(&src[2]),
         ];
-        assert!(weighted_gauss_newton_update(&param, &src, &dst).is_none());
+        assert!(weighted_gauss_newton_update(&transform, &src, &dst).is_none());
 
         // sufficient input size but rank is insufficient
         let src = vec![
-            Measurement::new(-8.89304516, 0.54202289),
-            Measurement::new(-4.03198385, -2.81807802),
-            Measurement::new(4.40356349, -9.43358563),
+            Vector2::new(-8.89304516, 0.54202289),
+            Vector2::new(-4.03198385, -2.81807802),
+            Vector2::new(4.40356349, -9.43358563),
         ];
         let dst = vec![
-            transform(&param, &src[0]),
-            transform(&param, &src[1]),
-            transform(&param, &src[2]),
+            transform.transform(&src[0]),
+            transform.transform(&src[1]),
+            transform.transform(&src[2]),
         ];
-        assert!(weighted_gauss_newton_update(&param, &src, &dst).is_none());
+        assert!(weighted_gauss_newton_update(&transform, &src, &dst).is_none());
     }
 
     #[test]
     fn test_weighted_gauss_newton_update_zero_x_diff() {
         let src = vec![
-            Measurement::new(0.0, 0.0),
-            Measurement::new(0.0, 0.1),
-            Measurement::new(0.0, 0.2),
-            Measurement::new(0.0, 0.3),
-            Measurement::new(0.0, 0.4),
-            Measurement::new(0.0, 0.5),
+            Vector2::new(0.0, 0.0),
+            Vector2::new(0.0, 0.1),
+            Vector2::new(0.0, 0.2),
+            Vector2::new(0.0, 0.3),
+            Vector2::new(0.0, 0.4),
+            Vector2::new(0.0, 0.5),
         ];
 
-        let param_true = Param::new(0.00, 0.01, 0.00);
+        let true_param = Param::new(0.00, 0.01, 0.00);
+        let true_transform = Transform::new(&true_param);
 
         let dst = src
             .iter()
-            .map(|p| transform(&param_true, p))
-            .collect::<Vec<Measurement>>();
+            .map(|p| true_transform.transform(p))
+            .collect::<Vec<Vector2>>();
 
         let initial_param = Param::new(0.00, 0.00, 0.00);
+        let initial_transform = Transform::new(&initial_param);
         // TODO Actually there is some error, but Hessian is not invertible so
         // the update cannot be calculated
-        assert!(weighted_gauss_newton_update(&initial_param, &src, &dst).is_none());
+        assert!(weighted_gauss_newton_update(&initial_transform, &src, &dst).is_none());
     }
 
     #[test]
@@ -472,184 +393,161 @@ mod tests {
         let dparam = Param::new(0.3, -0.5, 0.001);
         let initial_param = true_param + dparam;
 
+        let true_transform = Transform::new(&true_param);
+        let initial_transform = Transform::new(&initial_param);
+
         let src = vec![
-            Measurement::new(-8.89304516, 0.54202289),
-            Measurement::new(-4.03198385, -2.81807802),
-            Measurement::new(-5.9267953, 9.62339266),
-            Measurement::new(-4.04966218, -4.44595403),
-            Measurement::new(-2.8636942, -9.13843999),
-            Measurement::new(-6.97749644, -8.90180581),
-            Measurement::new(-9.66454985, 6.32282424),
-            Measurement::new(7.02264007, -0.88684585),
-            Measurement::new(4.1970011, -1.42366424),
-            // Measurement::new(-1.98903219, -0.96437383),  // corresponing to the large noise
-            Measurement::new(-0.68034875, -0.48699014),
-            Measurement::new(1.89645382, 1.861194),
-            Measurement::new(7.09550743, 2.18289525),
-            Measurement::new(-7.95383118, -5.16650913),
-            Measurement::new(-5.40235599, 2.70675665),
-            Measurement::new(-5.38909696, -5.48180288),
-            Measurement::new(-9.00498232, -5.12191142),
-            Measurement::new(-8.54899319, -3.25752055),
-            Measurement::new(6.89969814, 3.53276123),
-            Measurement::new(5.06875729, -0.2891854),
+            Vector2::new(-8.89304516, 0.54202289),
+            Vector2::new(-4.03198385, -2.81807802),
+            Vector2::new(-5.92679530, 9.62339266),
+            Vector2::new(-4.04966218, -4.44595403),
+            Vector2::new(-2.86369420, -9.13843999),
+            Vector2::new(-6.97749644, -8.90180581),
+            Vector2::new(-9.66454985, 6.32282424),
+            Vector2::new(7.02264007, -0.88684585),
+            Vector2::new(4.19700110, -1.42366424),
+            // Vector2::new(-1.98903219, -0.96437383),  // corresponds to the large noise
+            Vector2::new(-0.68034875, -0.48699014),
+            Vector2::new(1.89645382, 1.86119400),
+            Vector2::new(7.09550743, 2.18289525),
+            Vector2::new(-7.95383118, -5.16650913),
+            Vector2::new(-5.40235599, 2.70675665),
+            Vector2::new(-5.38909696, -5.48180288),
+            Vector2::new(-9.00498232, -5.12191142),
+            Vector2::new(-8.54899319, -3.25752055),
+            Vector2::new(6.89969814, 3.53276123),
+            Vector2::new(5.06875729, -0.28918540),
         ];
 
-        // noise follows the normal distribution of
+        // noise follow the normal distribution with
         // mean 0.0 and standard deviation 0.01
         let noise = [
-            Measurement::new(0.0105879, 0.01302535),
-            Measurement::new(0.01392508, 0.0083586),
-            Measurement::new(0.01113885, -0.00693269),
-            Measurement::new(0.01673124, -0.01735564),
-            Measurement::new(-0.01219263, 0.00080933),
-            Measurement::new(-0.00396817, 0.00111582),
-            Measurement::new(-0.00444043, 0.00658505),
-            Measurement::new(-0.01576271, -0.00701065),
-            Measurement::new(0.00464, -0.0040679),
-            // Measurement::new(-0.32268585, 0.49653010), // but add much larger noise here
-            Measurement::new(0.00269374, -0.00787015),
-            Measurement::new(-0.00494243, 0.00350137),
-            Measurement::new(0.00343766, -0.00039311),
-            Measurement::new(0.00661565, -0.00341112),
-            Measurement::new(-0.00936695, -0.00673899),
-            Measurement::new(-0.00240039, -0.00314409),
-            Measurement::new(-0.01434128, -0.0058539),
-            Measurement::new(0.00874225, 0.00295633),
-            Measurement::new(0.00736213, -0.00328875),
-            Measurement::new(0.00585082, -0.01232619),
+            Vector2::new(0.01058790, 0.01302535),
+            Vector2::new(0.01392508, 0.00835860),
+            Vector2::new(0.01113885, -0.00693269),
+            Vector2::new(0.01673124, -0.01735564),
+            Vector2::new(-0.01219263, 0.00080933),
+            Vector2::new(-0.00396817, 0.00111582),
+            Vector2::new(-0.00444043, 0.00658505),
+            Vector2::new(-0.01576271, -0.00701065),
+            Vector2::new(0.00464000, -0.00406790),
+            // Vector2::new(-0.32268585,  0.49653010),  // but add much larger noise here
+            Vector2::new(0.00269374, -0.00787015),
+            Vector2::new(-0.00494243, 0.00350137),
+            Vector2::new(0.00343766, -0.00039311),
+            Vector2::new(0.00661565, -0.00341112),
+            Vector2::new(-0.00936695, -0.00673899),
+            Vector2::new(-0.00240039, -0.00314409),
+            Vector2::new(-0.01434128, -0.00585390),
+            Vector2::new(0.00874225, 0.00295633),
+            Vector2::new(0.00736213, -0.00328875),
+            Vector2::new(0.00585082, -0.01232619),
         ];
 
         assert_eq!(src.len(), noise.len());
         let dst = src
             .iter()
             .zip(noise.iter())
-            .map(|(p, n)| transform(&true_param, p) + n)
+            .map(|(p, n)| true_transform.transform(&p) + n)
             .collect::<Vec<_>>();
-        let update = match weighted_gauss_newton_update(&initial_param, &src, &dst) {
-            Some(u) => u,
-            None => panic!("Return value cannot be None"),
+        let Some(update) = weighted_gauss_newton_update(&initial_transform, &src, &dst) else {
+            panic!("Return value cannot be None");
         };
         let updated_param = initial_param + update;
+        let updated_transform = Transform::new(&updated_param);
 
-        let e0 = error(&initial_param, &src, &dst);
-        let e1 = error(&updated_param, &src, &dst);
+        let e0 = error(&initial_transform, &src, &dst);
+        let e1 = error(&updated_transform, &src, &dst);
         assert!(e1 < e0 * 0.1);
 
         let updated_param = estimate_transform(&initial_param, &src, &dst);
+        let updated_transform = Transform::new(&updated_param);
 
-        let e0 = error(&initial_param, &src, &dst);
-        let e1 = error(&updated_param, &src, &dst);
+        let e0 = error(&initial_transform, &src, &dst);
+        let e1 = error(&updated_transform, &src, &dst);
         assert!(e1 < e0 * 0.001);
     }
 
     #[test]
-    fn test_calc_stddevs() {
-        #[rustfmt::skip]
-        let measurements = vec![
-            Measurement::new(53.72201757, 52.99126564),
-            Measurement::new(47.10884813, 53.59975516),
-            Measurement::new(39.39661665, 61.08762518),
-            Measurement::new(62.81692917, 54.56765183),
-            Measurement::new(39.26208329, 45.65102341),
-            Measurement::new(50.86473295, 44.72763481),
-            Measurement::new(39.28791948, 34.88506328),
-            Measurement::new(55.25576933, 39.59323902),
-            Measurement::new(36.75721579, 57.17795218),
-            Measurement::new(30.13909168, 64.76416708),
-            Measurement::new(44.81493956, 54.94041174),
-            Measurement::new(53.88324537, 60.4374775 ),
-            Measurement::new(47.88396982, 66.59441293),
-            Measurement::new(64.42865488, 40.9932948 ),
-            Measurement::new(44.81265264, 50.45413795),
-            Measurement::new(53.19558104, 28.24225202),
-            Measurement::new(55.95984582, 65.33672375),
-            Measurement::new(59.05920996, 27.61279324),
-            Measurement::new(46.8073715 , 30.79477285),
-            Measurement::new(39.59866249, 45.6226116 ),
-            Measurement::new(49.15739909, 55.53557656),
-            Measurement::new(43.24838042, 43.95231977),
-            Measurement::new(54.78299967, 40.5593425 ),
-            Measurement::new(41.9153867 , 55.54639181),
-            Measurement::new(52.18015184, 46.38912455),
-            Measurement::new(29.59992903, 46.32180761),
-            Measurement::new(75.51275641, 57.73265648),
-            Measurement::new(61.78180837, 54.48655747),
-            Measurement::new(72.17828583, 66.37805296),
-            Measurement::new(41.72995451, 50.9864875 )
-        ];
-        let stddevs = match calc_stddevs(&measurements) {
-            Some(stddevs) => stddevs,
-            None => panic!(),
-        };
-
-        // compare to stddevs calced by numpy
-        assert!((stddevs[0] - 10.88547151).abs() < 1.0);
-        assert!((stddevs[1] - 10.75361579).abs() < 1.0);
-    }
-
-    #[test]
-    fn test_association() {
+    fn test_icp_3dscan() {
         let src = vec![
-            Measurement::new(-8.30289767, 8.47750876),
-            Measurement::new(-6.45751825, -1.34801312),
-            Measurement::new(-8.66777369, -9.77914636),
-            Measurement::new(-8.36130159, -2.39500161),
-            Measurement::new(-9.64529718, -7.23686057),
+            Vector3::new(0.0, 0.0, 2.0),
+            Vector3::new(0.0, 0.1, 2.0),
+            Vector3::new(0.0, 0.2, 2.0),
+            Vector3::new(0.0, 0.3, 2.0),
+            Vector3::new(0.0, 0.4, 2.0),
+            Vector3::new(0.0, 0.5, 2.0),
+            Vector3::new(0.0, 0.6, 2.0),
+            Vector3::new(0.0, 0.7, 2.0),
+            Vector3::new(0.0, 0.8, 2.0),
+            Vector3::new(0.0, 0.9, 2.0),
+            Vector3::new(0.0, 1.0, 2.0),
+            Vector3::new(0.1, 0.0, 1.0),
+            Vector3::new(0.2, 0.0, 1.0),
+            Vector3::new(0.3, 0.0, 1.0),
+            Vector3::new(0.4, 0.0, 1.0),
+            Vector3::new(0.5, 0.0, 1.0),
+            Vector3::new(0.6, 0.0, 1.0),
+            Vector3::new(0.7, 0.0, 1.0),
+            Vector3::new(0.8, 0.0, 1.0),
+            Vector3::new(0.9, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 1.0),
         ];
 
-        let dst = vec![src[3], src[2], src[0], src[1], src[4]];
-
-        let kdtree = make_kdtree(&dst);
-        let correspondence = associate(&kdtree, &src);
-
-        assert_eq!(src.len(), correspondence.len());
-
-        let (sp, dp) = get_corresponding_points(&correspondence, &src, &dst);
-
-        for (s, d) in sp.iter().zip(dp.iter()) {
-            assert_eq!(s, d);
-        }
-    }
-
-    #[test]
-    fn test_icp() {
-        let src = vec![
-            Measurement::new(0.0, 0.0),
-            Measurement::new(0.0, 0.1),
-            Measurement::new(0.0, 0.2),
-            Measurement::new(0.0, 0.3),
-            Measurement::new(0.0, 0.4),
-            Measurement::new(0.0, 0.5),
-            Measurement::new(0.0, 0.6),
-            Measurement::new(0.0, 0.7),
-            Measurement::new(0.0, 0.8),
-            Measurement::new(0.0, 0.9),
-            Measurement::new(0.0, 1.0),
-            Measurement::new(0.1, 0.0),
-            Measurement::new(0.2, 0.0),
-            Measurement::new(0.3, 0.0),
-            Measurement::new(0.4, 0.0),
-            Measurement::new(0.5, 0.0),
-            Measurement::new(0.6, 0.0),
-            Measurement::new(0.7, 0.0),
-            Measurement::new(0.8, 0.0),
-            Measurement::new(0.9, 0.0),
-            Measurement::new(1.0, 0.0),
-        ];
-
-        let param_true = Param::new(0.01, 0.01, -0.02);
+        let true_param = Param::new(0.01, 0.01, -0.02);
+        let true_transform = Transform::new(&true_param);
 
         let dst = src
             .iter()
-            .map(|p| transform(&param_true, p))
-            .collect::<Vec<Measurement>>();
+            .map(|p| transform_xy(&true_transform, &p))
+            .collect::<Vec<Vector3>>();
 
         let diff = Param::new(0.05, 0.010, 0.010);
-        let initial_param = param_true + diff;
-        let param_pred = icp(&initial_param, &src, &dst);
+        let initial_param = true_param + diff;
+        let pred_param = icp_3dscan(&initial_param, &src, &dst);
 
-        assert!((param_pred - param_true).norm() < 1e-3);
+        assert!((pred_param - true_param).norm() < 1e-3);
+    }
+
+    #[test]
+    fn test_icp_2dscan() {
+        let src = vec![
+            Vector2::new(0.0, 0.0),
+            Vector2::new(0.0, 0.1),
+            Vector2::new(0.0, 0.2),
+            Vector2::new(0.0, 0.3),
+            Vector2::new(0.0, 0.4),
+            Vector2::new(0.0, 0.5),
+            Vector2::new(0.0, 0.6),
+            Vector2::new(0.0, 0.7),
+            Vector2::new(0.0, 0.8),
+            Vector2::new(0.0, 0.9),
+            Vector2::new(0.0, 1.0),
+            Vector2::new(0.1, 0.0),
+            Vector2::new(0.2, 0.0),
+            Vector2::new(0.3, 0.0),
+            Vector2::new(0.4, 0.0),
+            Vector2::new(0.5, 0.0),
+            Vector2::new(0.6, 0.0),
+            Vector2::new(0.7, 0.0),
+            Vector2::new(0.8, 0.0),
+            Vector2::new(0.9, 0.0),
+            Vector2::new(1.0, 0.0),
+        ];
+
+        let true_param = Param::new(0.01, 0.01, -0.02);
+        let true_transform = Transform::new(&true_param);
+
+        let dst = src
+            .iter()
+            .map(|p| true_transform.transform(p))
+            .collect::<Vec<Vector2>>();
+
+        let diff = Param::new(0.05, 0.010, 0.010);
+        let initial_param = true_param + diff;
+        let pred_param = icp_2dscan(&initial_param, &src, &dst);
+
+        assert!((pred_param - true_param).norm() < 1e-3);
     }
 
     use test::Bencher;
@@ -657,103 +555,106 @@ mod tests {
     #[bench]
     fn bench_gauss_newton_update(b: &mut Bencher) {
         let true_param = Param::new(10.0, 30.0, -0.15);
+        let true_transform = Transform::new(&true_param);
         let dparam = Param::new(0.3, -0.5, 0.001);
         let initial_param = true_param + dparam;
 
         let src = vec![
-            Measurement::new(-8.89304516, 0.54202289),
-            Measurement::new(-4.03198385, -2.81807802),
-            Measurement::new(-5.9267953, 9.62339266),
-            Measurement::new(-4.04966218, -4.44595403),
-            Measurement::new(-2.8636942, -9.13843999),
-            Measurement::new(-6.97749644, -8.90180581),
-            Measurement::new(-9.66454985, 6.32282424),
-            Measurement::new(7.02264007, -0.88684585),
-            Measurement::new(4.1970011, -1.42366424),
-            // Measurement::new(-1.98903219, -0.96437383),  // corresponing to the large noise
-            Measurement::new(-0.68034875, -0.48699014),
-            Measurement::new(1.89645382, 1.861194),
-            Measurement::new(7.09550743, 2.18289525),
-            Measurement::new(-7.95383118, -5.16650913),
-            Measurement::new(-5.40235599, 2.70675665),
-            Measurement::new(-5.38909696, -5.48180288),
-            Measurement::new(-9.00498232, -5.12191142),
-            Measurement::new(-8.54899319, -3.25752055),
-            Measurement::new(6.89969814, 3.53276123),
-            Measurement::new(5.06875729, -0.2891854),
+            Vector2::new(-8.89304516, 0.54202289),
+            Vector2::new(-4.03198385, -2.81807802),
+            Vector2::new(-5.9267953, 9.62339266),
+            Vector2::new(-4.04966218, -4.44595403),
+            Vector2::new(-2.8636942, -9.13843999),
+            Vector2::new(-6.97749644, -8.90180581),
+            Vector2::new(-9.66454985, 6.32282424),
+            Vector2::new(7.02264007, -0.88684585),
+            Vector2::new(4.1970011, -1.42366424),
+            // Vector2::new(-1.98903219, -0.96437383),  // corresponing to the large noise
+            Vector2::new(-0.68034875, -0.48699014),
+            Vector2::new(1.89645382, 1.861194),
+            Vector2::new(7.09550743, 2.18289525),
+            Vector2::new(-7.95383118, -5.16650913),
+            Vector2::new(-5.40235599, 2.70675665),
+            Vector2::new(-5.38909696, -5.48180288),
+            Vector2::new(-9.00498232, -5.12191142),
+            Vector2::new(-8.54899319, -3.25752055),
+            Vector2::new(6.89969814, 3.53276123),
+            Vector2::new(5.06875729, -0.2891854),
         ];
 
         // noise follows the normal distribution of
         // mean 0.0 and standard deviation 0.01
         let noise = [
-            Measurement::new(0.0105879, 0.01302535),
-            Measurement::new(0.01392508, 0.0083586),
-            Measurement::new(0.01113885, -0.00693269),
-            Measurement::new(0.01673124, -0.01735564),
-            Measurement::new(-0.01219263, 0.00080933),
-            Measurement::new(-0.00396817, 0.00111582),
-            Measurement::new(-0.00444043, 0.00658505),
-            Measurement::new(-0.01576271, -0.00701065),
-            Measurement::new(0.00464, -0.0040679),
-            // Measurement::new(-0.32268585, 0.49653010), // but add much larger noise here
-            Measurement::new(0.00269374, -0.00787015),
-            Measurement::new(-0.00494243, 0.00350137),
-            Measurement::new(0.00343766, -0.00039311),
-            Measurement::new(0.00661565, -0.00341112),
-            Measurement::new(-0.00936695, -0.00673899),
-            Measurement::new(-0.00240039, -0.00314409),
-            Measurement::new(-0.01434128, -0.0058539),
-            Measurement::new(0.00874225, 0.00295633),
-            Measurement::new(0.00736213, -0.00328875),
-            Measurement::new(0.00585082, -0.01232619),
+            Vector2::new(0.0105879, 0.01302535),
+            Vector2::new(0.01392508, 0.0083586),
+            Vector2::new(0.01113885, -0.00693269),
+            Vector2::new(0.01673124, -0.01735564),
+            Vector2::new(-0.01219263, 0.00080933),
+            Vector2::new(-0.00396817, 0.00111582),
+            Vector2::new(-0.00444043, 0.00658505),
+            Vector2::new(-0.01576271, -0.00701065),
+            Vector2::new(0.00464, -0.0040679),
+            // Vector2::new(-0.32268585, 0.49653010), // but add much larger noise here
+            Vector2::new(0.00269374, -0.00787015),
+            Vector2::new(-0.00494243, 0.00350137),
+            Vector2::new(0.00343766, -0.00039311),
+            Vector2::new(0.00661565, -0.00341112),
+            Vector2::new(-0.00936695, -0.00673899),
+            Vector2::new(-0.00240039, -0.00314409),
+            Vector2::new(-0.01434128, -0.0058539),
+            Vector2::new(0.00874225, 0.00295633),
+            Vector2::new(0.00736213, -0.00328875),
+            Vector2::new(0.00585082, -0.01232619),
         ];
 
         assert_eq!(src.len(), noise.len());
         let dst = src
             .iter()
             .zip(noise.iter())
-            .map(|(p, n)| transform(&true_param, p) + n)
+            .map(|(p, n)| true_transform.transform(&p) + n)
             .collect::<Vec<_>>();
 
-        b.iter(|| weighted_gauss_newton_update(&initial_param, &src, &dst));
+        let initial_transform = Transform::new(&initial_param);
+        b.iter(|| weighted_gauss_newton_update(&initial_transform, &src, &dst));
     }
 
     #[bench]
     fn bench_icp(b: &mut Bencher) {
         let src = vec![
-            Measurement::new(0.0, 0.0),
-            Measurement::new(0.0, 0.1),
-            Measurement::new(0.0, 0.2),
-            Measurement::new(0.0, 0.3),
-            Measurement::new(0.0, 0.4),
-            Measurement::new(0.0, 0.5),
-            Measurement::new(0.0, 0.6),
-            Measurement::new(0.0, 0.7),
-            Measurement::new(0.0, 0.8),
-            Measurement::new(0.0, 0.9),
-            Measurement::new(0.0, 1.0),
-            Measurement::new(0.1, 0.0),
-            Measurement::new(0.2, 0.0),
-            Measurement::new(0.3, 0.0),
-            Measurement::new(0.4, 0.0),
-            Measurement::new(0.5, 0.0),
-            Measurement::new(0.6, 0.0),
-            Measurement::new(0.7, 0.0),
-            Measurement::new(0.8, 0.0),
-            Measurement::new(0.9, 0.0),
-            Measurement::new(1.0, 0.0),
+            Vector3::new(0.0, 0.0, 2.0),
+            Vector3::new(0.0, 0.1, 2.0),
+            Vector3::new(0.0, 0.2, 2.0),
+            Vector3::new(0.0, 0.3, 2.0),
+            Vector3::new(0.0, 0.4, 2.0),
+            Vector3::new(0.0, 0.5, 2.0),
+            Vector3::new(0.0, 0.6, 2.0),
+            Vector3::new(0.0, 0.7, 2.0),
+            Vector3::new(0.0, 0.8, 2.0),
+            Vector3::new(0.0, 0.9, 2.0),
+            Vector3::new(0.0, 1.0, 2.0),
+            Vector3::new(0.1, 0.0, 1.0),
+            Vector3::new(0.2, 0.0, 1.0),
+            Vector3::new(0.3, 0.0, 1.0),
+            Vector3::new(0.4, 0.0, 1.0),
+            Vector3::new(0.5, 0.0, 1.0),
+            Vector3::new(0.6, 0.0, 1.0),
+            Vector3::new(0.7, 0.0, 1.0),
+            Vector3::new(0.8, 0.0, 1.0),
+            Vector3::new(0.9, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 1.0),
         ];
 
-        let param_true = Param::new(0.01, 0.01, -0.02);
+        let true_param = Param::new(0.01, 0.01, -0.02);
+        let true_transform = Transform::new(&true_param);
 
         let dst = src
             .iter()
-            .map(|p| transform(&param_true, p))
-            .collect::<Vec<Measurement>>();
+            .map(|p| transform_xy(&true_transform, &p))
+            .collect::<Vec<Vector3>>();
 
         let diff = Param::new(0.000, 0.010, 0.010);
-        let initial_param = param_true + diff;
+        let initial_param = true_param + diff;
 
-        b.iter(|| icp(&initial_param, &src, &dst));
+        b.iter(|| icp_3dscan(&initial_param, &src, &dst));
     }
 }
