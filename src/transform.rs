@@ -3,6 +3,7 @@ use crate::types::{Rotation2, Vector2, Vector3};
 
 use core::ops::Mul;
 
+#[derive(Copy, Clone)]
 pub struct Transform {
     pub rot: Rotation2,
     pub t: Vector2,
@@ -27,6 +28,13 @@ impl Transform {
         Transform {
             rot: inv_rot,
             t: -(inv_rot * self.t),
+        }
+    }
+
+    pub fn identity() -> Self {
+        Transform {
+            rot: Rotation2::identity(),
+            t: Vector2::zeros(),
         }
     }
 }

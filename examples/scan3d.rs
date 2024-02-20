@@ -106,7 +106,7 @@ fn main() -> hdf5::Result<()> {
     let src = scan.get_range(0, step).unwrap();
     let src = remove_invalid_values(&src);
 
-    let mut param = icp::Param::zeros();
+    let mut transform = icp::Transform::identity();
     let mut path: Vec<icp::Vector2> = vec![];
 
     let mut index = 0;
@@ -127,8 +127,8 @@ fn main() -> hdf5::Result<()> {
             .build_cartesian_2d(-3.0..3.0, -3.0..3.0)
             .unwrap();
 
-        param = icp::icp_3dscan(&param, &src, &dst);
-        let inv_transform = icp::Transform::new(&(-param));
+        transform = icp::icp_3dscan(&transform, &src, &dst);
+        let inv_transform = transform.inverse();
 
         cc.draw_series(src.iter().map(|p| to_point(&(p[0], p[1]), &src_color)))
             .unwrap();
