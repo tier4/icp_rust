@@ -1,5 +1,3 @@
-use hdf5;
-use ndarray;
 use ndarray::{Array2, Array3};
 
 use piston_window::{EventLoop, PistonWindow, WindowSettings};

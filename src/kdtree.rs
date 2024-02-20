@@ -1,5 +1,4 @@
 use alloc::vec::Vec;
-use kiddo;
 use kiddo::float::distance::SquaredEuclidean;
 use kiddo::float::kdtree::KdTree as KiddoTree;
 

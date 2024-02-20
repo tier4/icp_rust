@@ -1,6 +1,5 @@
 // Linear time median search
 use alloc::vec::Vec;
-use core::cmp::PartialOrd;
 
 use crate::types::Vector;
 

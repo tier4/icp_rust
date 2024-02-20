@@ -7,8 +7,6 @@ use std::fs::File;
 use std::io::BufRead;
 use std::path::Path;
 
-use icp;
-
 fn read_lines<P>(filename: P) -> std::io::Result<std::io::Lines<std::io::BufReader<File>>>
 where
     P: AsRef<Path>,
