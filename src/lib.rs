@@ -54,17 +54,13 @@ fn transform_xy(transform: &Transform, sp: &Vector3) -> Vector3 {
     Vector3::new(dxy[0], dxy[1], z)
 }
 
-pub fn estimate_transform(
-    initial_param: &Param,
-    src: &Vec<Vector2>,
-    dst: &Vec<Vector2>,
-) -> Transform {
+pub fn estimate_transform(src: &Vec<Vector2>, dst: &Vec<Vector2>) -> Transform {
     let delta_norm_threshold: f64 = 1e-6;
     let max_iter: usize = 200;
 
     let mut prev_error: f64 = f64::MAX;
 
-    let mut transform = Transform::new(initial_param);
+    let mut transform = Transform::identity();
     for _ in 0..max_iter {
         let Some(delta) = weighted_gauss_newton_update(&transform, &src, &dst) else {
             break;
@@ -107,7 +103,7 @@ pub fn icp_2dscan(
 
         let correspondence = kdtree::associate(&kdtree, &src_tranformed);
         let (sp, dp) = kdtree::get_corresponding_points(&correspondence, &src_tranformed, dst);
-        let dtransform = estimate_transform(&Param::zeros(), &sp, &dp);
+        let dtransform = estimate_transform(&sp, &dp);
 
         transform = dtransform * transform;
     }
@@ -131,7 +127,7 @@ pub fn icp_3dscan(
 
         let correspondence = kdtree::associate(&kdtree, &src_tranformed);
         let (sp, dp) = kdtree::get_corresponding_points(&correspondence, &src_tranformed, dst);
-        let dtransform = estimate_transform(&Param::zeros(), &get_xy(&sp), &get_xy(&dp));
+        let dtransform = estimate_transform(&get_xy(&sp), &get_xy(&dp));
 
         transform = dtransform * transform;
     }
@@ -462,7 +458,7 @@ mod tests {
         let e1 = error(&updated_transform, &src, &dst);
         assert!(e1 < e0 * 0.1);
 
-        let updated_transform = estimate_transform(&initial_param, &src, &dst);
+        let updated_transform = estimate_transform(&src, &dst);
 
         let e0 = error(&initial_transform, &src, &dst);
         let e1 = error(&updated_transform, &src, &dst);
