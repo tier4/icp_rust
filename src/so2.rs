@@ -1,10 +1,10 @@
-use nalgebra::Matrix2;
+pub use crate::types::{Matrix2, Matrix3, Rotation2, Vector2, Vector3};
 
-pub fn log(rotation: Matrix2<f64>) -> f64 {
+pub fn log(rotation: &Matrix2) -> f64 {
     f64::atan2(rotation[(1, 0)], rotation[(0, 0)])
 }
 
-pub fn exp(theta: f64) -> Matrix2<f64> {
+pub fn exp(theta: f64) -> Matrix2 {
     let cos = f64::cos(theta);
     let sin = f64::sin(theta);
     #[rustfmt::skip]
@@ -35,18 +35,18 @@ mod tests {
     fn test_log() {
         let theta = 0.3 * consts::PI;
         let rot = exp(theta);
-        assert!((log(rot) - theta).abs() < 1e-6);
+        assert!((log(&rot) - theta).abs() < 1e-6);
 
         let theta = 0.8 * consts::PI;
         let rot = exp(theta);
-        assert!((log(rot) - theta).abs() < 1e-6);
+        assert!((log(&rot) - theta).abs() < 1e-6);
 
         let theta = -0.7 * consts::PI;
         let rot = exp(theta);
-        assert!((log(rot) - theta).abs() < 1e-6);
+        assert!((log(&rot) - theta).abs() < 1e-6);
 
         let theta = -0.1 * consts::PI;
         let rot = exp(theta);
-        assert!((log(rot) - theta).abs() < 1e-6);
+        assert!((log(&rot) - theta).abs() < 1e-6);
     }
 }

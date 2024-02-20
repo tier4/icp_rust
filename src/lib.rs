@@ -14,22 +14,18 @@ pub mod se2;
 pub mod so2;
 pub mod transform;
 
-mod geometry;
 mod huber;
 mod kdtree;
 mod linalg;
 mod stats;
 mod types;
 
-use crate::geometry::Rotation;
 pub use crate::transform::Transform;
+pub use crate::types::{Rotation2, Vector2, Vector3};
 
 pub type Param = nalgebra::Vector3<f64>;
 type Jacobian = nalgebra::Matrix2x3<f64>;
 type Hessian = nalgebra::Matrix3<f64>;
-
-pub type Vector2 = types::Vector<2>;
-pub type Vector3 = types::Vector<3>;
 
 const HUBER_K: f64 = 1.345;
 
@@ -58,15 +54,14 @@ fn transform_xy(transform: &Transform, sp: &Vector3) -> Vector3 {
     Vector3::new(dxy[0], dxy[1], z)
 }
 
-pub fn estimate_transform(initial_param: &Param, src: &Vec<Vector2>, dst: &Vec<Vector2>) -> Param {
+pub fn estimate_transform(src: &Vec<Vector2>, dst: &Vec<Vector2>) -> Transform {
     let delta_norm_threshold: f64 = 1e-6;
     let max_iter: usize = 200;
 
     let mut prev_error: f64 = f64::MAX;
 
-    let mut param = *initial_param;
+    let mut transform = Transform::identity();
     for _ in 0..max_iter {
-        let transform = Transform::new(&param);
         let Some(delta) = weighted_gauss_newton_update(&transform, &src, &dst) else {
             break;
         };
@@ -81,10 +76,9 @@ pub fn estimate_transform(initial_param: &Param, src: &Vec<Vector2>, dst: &Vec<V
         }
         prev_error = error;
 
-        // TODO better to compute T <- T * exp_se2(delta), T in SE(2)
-        param = param + delta;
+        transform = Transform::new(&delta) * transform;
     }
-    param
+    transform
 }
 
 fn get_xy(xyz: &Vec<Vector3>) -> Vec<Vector2> {
@@ -92,14 +86,16 @@ fn get_xy(xyz: &Vec<Vector3>) -> Vec<Vector2> {
     xyz.iter().map(f).collect::<Vec<Vector2>>()
 }
 
-pub fn icp_2dscan(initial_param: &Param, src: &Vec<Vector2>, dst: &Vec<Vector2>) -> Param {
+pub fn icp_2dscan(
+    initial_transform: &Transform,
+    src: &Vec<Vector2>,
+    dst: &Vec<Vector2>,
+) -> Transform {
     let kdtree = kdtree::KdTree::new(dst);
     let max_iter: usize = 20;
 
-    let mut param: Param = *initial_param;
+    let mut transform = *initial_transform;
     for _ in 0..max_iter {
-        let transform = Transform::new(&param);
-
         let src_tranformed = src
             .iter()
             .map(|sp| transform.transform(&sp))
@@ -107,21 +103,23 @@ pub fn icp_2dscan(initial_param: &Param, src: &Vec<Vector2>, dst: &Vec<Vector2>)
 
         let correspondence = kdtree::associate(&kdtree, &src_tranformed);
         let (sp, dp) = kdtree::get_corresponding_points(&correspondence, &src_tranformed, dst);
-        let dparam = estimate_transform(&Param::zeros(), &sp, &dp);
+        let dtransform = estimate_transform(&sp, &dp);
 
-        param = dparam + param;
+        transform = dtransform * transform;
     }
-    param
+    transform
 }
 
-pub fn icp_3dscan(initial_param: &Param, src: &Vec<Vector3>, dst: &Vec<Vector3>) -> Param {
+pub fn icp_3dscan(
+    initial_transform: &Transform,
+    src: &Vec<Vector3>,
+    dst: &Vec<Vector3>,
+) -> Transform {
     let kdtree = kdtree::KdTree::new(dst);
     let max_iter: usize = 20;
 
-    let mut param: Param = *initial_param;
+    let mut transform = *initial_transform;
     for _ in 0..max_iter {
-        let transform = Transform::new(&param);
-
         let src_tranformed = src
             .iter()
             .map(|sp| transform_xy(&transform, &sp))
@@ -129,21 +127,21 @@ pub fn icp_3dscan(initial_param: &Param, src: &Vec<Vector3>, dst: &Vec<Vector3>)
 
         let correspondence = kdtree::associate(&kdtree, &src_tranformed);
         let (sp, dp) = kdtree::get_corresponding_points(&correspondence, &src_tranformed, dst);
-        let dparam = estimate_transform(&Param::zeros(), &get_xy(&sp), &get_xy(&dp));
+        let dtransform = estimate_transform(&get_xy(&sp), &get_xy(&dp));
 
-        param = dparam + param;
+        transform = dtransform * transform;
     }
-    param
+    transform
 }
 
-fn jacobian(rot: &Rotation<2>, landmark: &Vector2) -> Jacobian {
+fn jacobian(rot: &Rotation2, landmark: &Vector2) -> Jacobian {
     let a = Vector2::new(-landmark[1], landmark[0]);
-    let rot = rot;
+    let r = rot.matrix();
     let b = rot * a;
     #[rustfmt::skip]
     Jacobian::new(
-        rot[(0, 0)], rot[(0, 1)], b[0],
-        rot[(1, 0)], rot[(1, 1)], b[1])
+        r[(0, 0)], r[(0, 1)], b[0],
+        r[(1, 0)], r[(1, 1)], b[1])
 }
 
 fn check_input_size(input: &Vec<Vector2>) -> bool {
@@ -460,8 +458,7 @@ mod tests {
         let e1 = error(&updated_transform, &src, &dst);
         assert!(e1 < e0 * 0.1);
 
-        let updated_param = estimate_transform(&initial_param, &src, &dst);
-        let updated_transform = Transform::new(&updated_param);
+        let updated_transform = estimate_transform(&src, &dst);
 
         let e0 = error(&initial_transform, &src, &dst);
         let e1 = error(&updated_transform, &src, &dst);
@@ -494,19 +491,21 @@ mod tests {
             Vector3::new(1.0, 0.0, 1.0),
         ];
 
-        let true_param = Param::new(0.01, 0.01, -0.02);
-        let true_transform = Transform::new(&true_param);
+        let true_transform = Transform::new(&Param::new(0.01, 0.01, -0.02));
 
         let dst = src
             .iter()
             .map(|p| transform_xy(&true_transform, &p))
             .collect::<Vec<Vector3>>();
 
-        let diff = Param::new(0.05, 0.010, 0.010);
-        let initial_param = true_param + diff;
-        let pred_param = icp_3dscan(&initial_param, &src, &dst);
+        let noise = Transform::new(&Param::new(0.05, 0.010, 0.010));
+        let initial_transform = noise * true_transform;
+        let pred_transform = icp_3dscan(&initial_transform, &src, &dst);
 
-        assert!((pred_param - true_param).norm() < 1e-3);
+        for (sp, dp_true) in src.iter().zip(dst.iter()) {
+            let dp_pred = transform_xy(&pred_transform, &sp);
+            assert!((dp_pred - dp_true).norm() < 1e-3);
+        }
     }
 
     #[test]
@@ -535,19 +534,21 @@ mod tests {
             Vector2::new(1.0, 0.0),
         ];
 
-        let true_param = Param::new(0.01, 0.01, -0.02);
-        let true_transform = Transform::new(&true_param);
+        let true_transform = Transform::new(&Param::new(0.01, 0.01, -0.02));
 
         let dst = src
             .iter()
             .map(|p| true_transform.transform(p))
             .collect::<Vec<Vector2>>();
 
-        let diff = Param::new(0.05, 0.010, 0.010);
-        let initial_param = true_param + diff;
-        let pred_param = icp_2dscan(&initial_param, &src, &dst);
+        let noise = Transform::new(&Param::new(0.05, 0.010, 0.010));
+        let initial_transform = noise * true_transform;
+        let pred_transform = icp_2dscan(&initial_transform, &src, &dst);
 
-        assert!((pred_param - true_param).norm() < 1e-3);
+        for (sp, dp_true) in src.iter().zip(dst.iter()) {
+            let dp_pred = pred_transform.transform(&sp);
+            assert!((dp_pred - dp_true).norm() < 1e-3);
+        }
     }
 
     use test::Bencher;
@@ -652,9 +653,9 @@ mod tests {
             .map(|p| transform_xy(&true_transform, &p))
             .collect::<Vec<Vector3>>();
 
-        let diff = Param::new(0.000, 0.010, 0.010);
-        let initial_param = true_param + diff;
+        let noise = Transform::new(&Param::new(0.05, 0.010, 0.010));
+        let initial_transform = noise * true_transform;
 
-        b.iter(|| icp_3dscan(&initial_param, &src, &dst));
+        b.iter(|| icp_3dscan(&initial_transform, &src, &dst));
     }
 }
