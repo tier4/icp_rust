@@ -10,7 +10,7 @@ pub struct Transform {
 }
 
 impl Transform {
-    pub fn new(param: &Vector3) -> Self {
+    pub fn from_se2(param: &Vector3) -> Self {
         let (rot, t) = se2::calc_rt(param);
         Transform { rot, t }
     }

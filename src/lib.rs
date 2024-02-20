@@ -76,7 +76,7 @@ pub fn estimate_transform(src: &Vec<Vector2>, dst: &Vec<Vector2>) -> Transform {
         }
         prev_error = error;
 
-        transform = Transform::new(&delta) * transform;
+        transform = Transform::from_se2(&delta) * transform;
     }
     transform
 }
@@ -226,7 +226,7 @@ mod tests {
     #[test]
     fn test_residual() {
         let param: Param = Vector3::new(-10., 20., 0.01);
-        let transform = Transform::new(&param);
+        let transform = Transform::from_se2(&param);
         let src = Vector2::new(7f64, 8f64);
         let dst = transform.transform(&src);
         assert_eq!(residual(&transform, &src, &dst), Vector2::zeros());
@@ -247,7 +247,7 @@ mod tests {
         ];
 
         let param: Param = Vector3::new(10., 20., 0.01);
-        let transform = Transform::new(&param);
+        let transform = Transform::from_se2(&param);
         let r0 = residual(&transform, &src[0], &dst[0]);
         let r1 = residual(&transform, &src[1], &dst[1]);
         let r2 = residual(&transform, &src[2], &dst[2]);
@@ -258,7 +258,7 @@ mod tests {
     #[test]
     fn test_gauss_newton_update_input_size() {
         let param = Param::new(10.0, 30.0, -0.15);
-        let transform = Transform::new(&param);
+        let transform = Transform::from_se2(&param);
 
         let src = vec![];
         let dst = vec![];
@@ -281,8 +281,8 @@ mod tests {
         let true_param = Param::new(10.0, 30.0, -0.15);
         let dparam = Param::new(0.3, -0.5, 0.001);
         let initial_param = true_param + dparam;
-        let true_transform = Transform::new(&true_param);
-        let initial_transform = Transform::new(&initial_param);
+        let true_transform = Transform::from_se2(&true_param);
+        let initial_transform = Transform::from_se2(&initial_param);
 
         let src = vec![
             Vector2::new(-8.76116663, 3.50338231),
@@ -301,8 +301,8 @@ mod tests {
         };
         let updated_param = initial_param + update;
 
-        let initial_transform = Transform::new(&initial_param);
-        let updated_transform = Transform::new(&updated_param);
+        let initial_transform = Transform::from_se2(&initial_param);
+        let updated_transform = Transform::from_se2(&updated_param);
 
         let e0 = error(&initial_transform, &src, &dst);
         let e1 = error(&updated_transform, &src, &dst);
@@ -312,7 +312,7 @@ mod tests {
     #[test]
     fn test_weighted_gauss_newton_update_input_size() {
         let param = Param::new(10.0, 30.0, -0.15);
-        let transform = Transform::new(&param);
+        let transform = Transform::from_se2(&param);
 
         // insufficient input size
         let src = vec![];
@@ -371,7 +371,7 @@ mod tests {
         ];
 
         let true_param = Param::new(0.00, 0.01, 0.00);
-        let true_transform = Transform::new(&true_param);
+        let true_transform = Transform::from_se2(&true_param);
 
         let dst = src
             .iter()
@@ -379,7 +379,7 @@ mod tests {
             .collect::<Vec<Vector2>>();
 
         let initial_param = Param::new(0.00, 0.00, 0.00);
-        let initial_transform = Transform::new(&initial_param);
+        let initial_transform = Transform::from_se2(&initial_param);
         // TODO Actually there is some error, but Hessian is not invertible so
         // the update cannot be calculated
         assert!(weighted_gauss_newton_update(&initial_transform, &src, &dst).is_none());
@@ -391,8 +391,8 @@ mod tests {
         let dparam = Param::new(0.3, -0.5, 0.001);
         let initial_param = true_param + dparam;
 
-        let true_transform = Transform::new(&true_param);
-        let initial_transform = Transform::new(&initial_param);
+        let true_transform = Transform::from_se2(&true_param);
+        let initial_transform = Transform::from_se2(&initial_param);
 
         let src = vec![
             Vector2::new(-8.89304516, 0.54202289),
@@ -452,7 +452,7 @@ mod tests {
             panic!("Return value cannot be None");
         };
         let updated_param = initial_param + update;
-        let updated_transform = Transform::new(&updated_param);
+        let updated_transform = Transform::from_se2(&updated_param);
 
         let e0 = error(&initial_transform, &src, &dst);
         let e1 = error(&updated_transform, &src, &dst);
@@ -491,14 +491,14 @@ mod tests {
             Vector3::new(1.0, 0.0, 1.0),
         ];
 
-        let true_transform = Transform::new(&Param::new(0.01, 0.01, -0.02));
+        let true_transform = Transform::from_se2(&Param::new(0.01, 0.01, -0.02));
 
         let dst = src
             .iter()
             .map(|p| transform_xy(&true_transform, &p))
             .collect::<Vec<Vector3>>();
 
-        let noise = Transform::new(&Param::new(0.05, 0.010, 0.010));
+        let noise = Transform::from_se2(&Param::new(0.05, 0.010, 0.010));
         let initial_transform = noise * true_transform;
         let pred_transform = icp_3dscan(&initial_transform, &src, &dst);
 
@@ -534,14 +534,14 @@ mod tests {
             Vector2::new(1.0, 0.0),
         ];
 
-        let true_transform = Transform::new(&Param::new(0.01, 0.01, -0.02));
+        let true_transform = Transform::from_se2(&Param::new(0.01, 0.01, -0.02));
 
         let dst = src
             .iter()
             .map(|p| true_transform.transform(p))
             .collect::<Vec<Vector2>>();
 
-        let noise = Transform::new(&Param::new(0.05, 0.010, 0.010));
+        let noise = Transform::from_se2(&Param::new(0.05, 0.010, 0.010));
         let initial_transform = noise * true_transform;
         let pred_transform = icp_2dscan(&initial_transform, &src, &dst);
 
@@ -556,7 +556,7 @@ mod tests {
     #[bench]
     fn bench_gauss_newton_update(b: &mut Bencher) {
         let true_param = Param::new(10.0, 30.0, -0.15);
-        let true_transform = Transform::new(&true_param);
+        let true_transform = Transform::from_se2(&true_param);
         let dparam = Param::new(0.3, -0.5, 0.001);
         let initial_param = true_param + dparam;
 
@@ -615,7 +615,7 @@ mod tests {
             .map(|(p, n)| true_transform.transform(&p) + n)
             .collect::<Vec<_>>();
 
-        let initial_transform = Transform::new(&initial_param);
+        let initial_transform = Transform::from_se2(&initial_param);
         b.iter(|| weighted_gauss_newton_update(&initial_transform, &src, &dst));
     }
 
@@ -646,14 +646,14 @@ mod tests {
         ];
 
         let true_param = Param::new(0.01, 0.01, -0.02);
-        let true_transform = Transform::new(&true_param);
+        let true_transform = Transform::from_se2(&true_param);
 
         let dst = src
             .iter()
             .map(|p| transform_xy(&true_transform, &p))
             .collect::<Vec<Vector3>>();
 
-        let noise = Transform::new(&Param::new(0.05, 0.010, 0.010));
+        let noise = Transform::from_se2(&Param::new(0.05, 0.010, 0.010));
         let initial_transform = noise * true_transform;
 
         b.iter(|| icp_3dscan(&initial_transform, &src, &dst));
