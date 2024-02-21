@@ -148,7 +148,7 @@ pub fn icp_3dscan(
 /// \end{bmatrix}
 /// $$
 ///
-/// Also, let $\mathrm{Exp}$ be an exponential map that maps a 3D vector to a 2D transform matrix.
+/// Also, let $\mathrm{Exp}$ be an exponential map that maps a 3D vector to a 2D transform matrix,
 ///
 /// $$
 /// \begin{aligned}
@@ -169,7 +169,7 @@ pub fn icp_3dscan(
 /// $$
 ///
 /// In the ICP's problem setting, given two associated points
-/// $\mathbf{a}, \mathbf{b} \in \mathbb{R}^{2}$, we aim to find the optimal tarnsformation
+/// $\mathbf{a}, \mathbf{b} \in \mathbb{R}^{2}$, we aim to find the optimal transformation
 /// parameter $\mathbf{x}^{*} \in \mathrm{R}^{2}$ that minimizes the difference between the
 /// transformed source point and the destination point.
 ///
@@ -184,7 +184,7 @@ pub fn icp_3dscan(
 /// such that $\dot{\mathbf{a}} = \left[a_x, a_y, 1\right]$.
 ///
 /// To formulate the Gauss-Newton update, we calculate the jacobian of the residual function with
-/// respect to the pose parameter.
+/// respect to the transformation parameter.
 ///
 /// \\[
 /// \begin{aligned}
