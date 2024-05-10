@@ -64,7 +64,7 @@ fn remove_invalid_values(points: &Vec<icp::Vector3>) -> Vec<icp::Vector3> {
     points
         .iter()
         .cloned()
-        .filter(|&p| p.norm() > 0.2)
+        .filter(|&p| icp::norm(&p) > 0.2)
         .collect::<Vec<icp::Vector3>>()
 }
 

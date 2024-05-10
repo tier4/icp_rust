@@ -1,8 +1,7 @@
 pub use crate::types::{Matrix2, Matrix3, Rotation2, Vector2, Vector3};
 
-use core::f64::consts;
-
 use crate::so2;
+use core::f64::consts;
 
 pub fn get_rt(transform: &Matrix3) -> (Matrix2, Vector2) {
     #[rustfmt::skip]
@@ -16,7 +15,8 @@ pub fn get_rt(transform: &Matrix3) -> (Matrix2, Vector2) {
 
 pub fn calc_rt(param: &Vector3) -> (Rotation2, Vector2) {
     let theta = param[2];
-    let rot = Rotation2::new(theta);
+
+    let rot = so2::new_rotation2(theta);
 
     let cos = f64::cos(theta);
     let sin = f64::sin(theta);
@@ -74,6 +74,7 @@ pub fn log(transform: &Matrix3) -> Vector3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::norm::norm;
 
     #[test]
     fn test_exp() {
@@ -100,7 +101,7 @@ mod tests {
             -0.7826124, 0.6225093, -0.01307704,
             0., 0., 1.,
         );
-        assert!((transform - expected).norm() < 1e-6);
+        assert!(norm(&(transform - expected)) < 1e-6);
 
         // >>> a = np.array([-0.24295876,  0.95847196,  0.91052553])
         // >>> expm(skew_se2(a))
@@ -116,7 +117,7 @@ mod tests {
             0.78982617, 0.61333076, 0.72824049,
             0., 0., 1.,
         );
-        assert!((transform - expected).norm() < 1e-6);
+        assert!(norm(&(transform - expected)) < 1e-6);
 
         // >>> a = np.array([10., -20., 0.])
         // >>> expm(skew_se2(a))
@@ -132,7 +133,7 @@ mod tests {
             0., 1., -20.,
             0., 0., 1.,
         );
-        assert!((transform - expected).norm() < 1e-6);
+        assert!(norm(&(transform - expected)) < 1e-6);
     }
 
     #[test]
@@ -159,7 +160,7 @@ mod tests {
         );
         let expected = Vector3::new(2.89271776, 0.34275002, -1.6427056);
         let param = log(&transform);
-        assert!((param - expected).norm() < 1e-6);
+        assert!(norm(&(param - expected)) < 1e-6);
 
         // >>> a = np.array([-1., 3., np.pi])
         // >>> expm(skew_se2(a))
@@ -175,7 +176,7 @@ mod tests {
         );
         let expected = Vector3::new(-1., 3., consts::PI);
         let param = log(&transform);
-        assert!((param - expected).norm() < 1e-6);
+        assert!(norm(&(param - expected)) < 1e-6);
 
         // >>> a = np.array([-1., 3., 0.])
         // >>> expm(skew_se2(a))
@@ -190,7 +191,7 @@ mod tests {
         );
         let expected = Vector3::new(-1., 3., 0.);
         let param = log(&transform);
-        assert!((param - expected).norm() < 1e-6);
+        assert!(norm(&(param - expected)) < 1e-6);
     }
 
     #[test]

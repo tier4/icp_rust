@@ -8,8 +8,6 @@ extern crate test;
 
 use alloc::vec::Vec;
 
-use nalgebra::Cholesky;
-
 pub mod se2;
 pub mod so2;
 pub mod transform;
@@ -17,9 +15,11 @@ pub mod transform;
 mod huber;
 mod kdtree;
 mod linalg;
+mod norm;
 mod stats;
 mod types;
 
+pub use crate::norm::norm;
 pub use crate::transform::Transform;
 pub use crate::types::{Rotation2, Vector2, Vector3};
 
@@ -66,7 +66,7 @@ pub fn estimate_transform(src: &Vec<Vector2>, dst: &Vec<Vector2>) -> Transform {
             break;
         };
 
-        if delta.norm_squared() < delta_norm_threshold {
+        if delta.dot(&delta) < delta_norm_threshold {
             break;
         }
 
@@ -170,8 +170,10 @@ pub fn gauss_newton_update(
         },
     );
     // TODO Check matrix rank before solving linear equation
-    let update = Cholesky::new_unchecked(jtj).solve(&jtr);
-    Some(-update)
+    match linalg::inverse3x3(&jtj) {
+        Some(jtj_inv) => return Some(-jtj_inv * jtr),
+        None => return None,
+    }
 }
 
 pub fn weighted_gauss_newton_update(
@@ -251,7 +253,7 @@ mod tests {
         let r0 = residual(&transform, &src[0], &dst[0]);
         let r1 = residual(&transform, &src[1], &dst[1]);
         let r2 = residual(&transform, &src[2], &dst[2]);
-        let expected = r0.norm_squared() + r1.norm_squared() + r2.norm_squared();
+        let expected = r0.dot(&r0) + r1.dot(&r1) + r2.dot(&r2);
         assert_eq!(error(&transform, &src, &dst), expected);
     }
 
@@ -504,7 +506,7 @@ mod tests {
 
         for (sp, dp_true) in src.iter().zip(dst.iter()) {
             let dp_pred = transform_xy(&pred_transform, &sp);
-            assert!((dp_pred - dp_true).norm() < 1e-3);
+            assert!(norm(&(dp_pred - dp_true)) < 1e-3);
         }
     }
 
@@ -547,7 +549,7 @@ mod tests {
 
         for (sp, dp_true) in src.iter().zip(dst.iter()) {
             let dp_pred = pred_transform.transform(&sp);
-            assert!((dp_pred - dp_true).norm() < 1e-3);
+            assert!(norm(&(dp_pred - dp_true)) < 1e-3);
         }
     }
 
