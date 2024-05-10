@@ -1,5 +1,16 @@
 pub use crate::types::{Matrix2, Matrix3, Rotation2, Vector2, Vector3};
 
+pub fn new_rotation2(theta: f64) -> Rotation2 {
+    // In Rotation2::new is not supported in the no-std environment
+    #[rustfmt::skip]
+    Rotation2::from_matrix_unchecked(
+        Matrix2::new(
+            f64::cos(theta), -f64::sin(theta),
+            f64::sin(theta), f64::cos(theta)
+        )
+    )
+}
+
 pub fn log(rotation: &Matrix2) -> f64 {
     f64::atan2(rotation[(1, 0)], rotation[(0, 0)])
 }

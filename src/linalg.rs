@@ -31,6 +31,8 @@ pub fn inverse3x3(matrix: &Matrix3) -> Option<Matrix3> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::norm::norm;
+
     #[test]
     fn test_inverse3x3() {
         let identity = Matrix3::identity();
@@ -45,7 +47,7 @@ mod tests {
             Some(inverse) => inverse,
             None => panic!("Should return Some(inverse_matrix)"),
         };
-        assert!((inverse * matrix - identity).norm() < 1e-14);
+        assert!(norm(&(inverse * matrix - identity)) < 1e-14);
 
         assert!(inverse3x3(&Matrix3::zeros()).is_none());
 
@@ -66,6 +68,6 @@ mod tests {
         let Some(inverse) = inverse3x3(&matrix) else {
             panic!("Should return Some(inverse_matrix)");
         };
-        assert!((inverse * matrix - identity).norm() < 1e-14);
+        assert!(norm(&(inverse * matrix - identity)) < 1e-14);
     }
 }
