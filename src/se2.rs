@@ -1,5 +1,7 @@
 pub use crate::types::{Matrix2, Matrix3, Rotation2, Vector2, Vector3};
 
+use num_traits::real::Real;
+
 use crate::so2;
 use core::f64::consts;
 

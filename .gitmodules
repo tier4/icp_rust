@@ -1,0 +1,4 @@
+[submodule "acap"]
+	path = acap
+  url = https://github.com/IshitaTakeshi/acap
+  branch = "no-std"

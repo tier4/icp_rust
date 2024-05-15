@@ -1,5 +1,7 @@
 pub use crate::types::{Matrix2, Matrix3, Rotation2, Vector2, Vector3};
 
+use num_traits::real::Real;
+
 pub fn new_rotation2(theta: f64) -> Rotation2 {
     // In Rotation2::new is not supported in the no-std environment
     #[rustfmt::skip]

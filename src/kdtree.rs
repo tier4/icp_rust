@@ -1,55 +1,43 @@
 use alloc::vec::Vec;
-use kiddo::float::distance::SquaredEuclidean;
-use kiddo::float::kdtree::KdTree as KiddoTree;
+
+use acap::NearestNeighbors;
+use acap::euclid::Euclidean;
+use acap::vp::VpTree;
 
 use crate::types::Vector;
 
-type Tree<const D: usize> = KiddoTree<f64, usize, D, 128, u32>;
-
 pub struct KdTree<const D: usize> {
-    tree: Tree<D>,
+    tree: VpTree<Euclidean<Vec<f64>>>,
 }
 
 impl<const D: usize> KdTree<D> {
     pub fn new(landmarks: &Vec<Vector<D>>) -> Self {
-        let mut tree: Tree<D> = KiddoTree::with_capacity(landmarks.len());
-        for (i, landmark) in landmarks.iter().enumerate() {
+        let mut points = vec![];
+        for landmark in landmarks.iter() {
             let array: [f64; D] = (*landmark).into();
-            tree.add(&array, i);
+            let p = Euclidean(array.to_vec());
+            points.push(p);
         }
-        KdTree { tree }
+        KdTree { tree: VpTree::balanced(points) }
     }
 
-    pub fn nearest_one(&self, query: &Vector<D>) -> usize {
-        let p: [f64; D] = (*query).into();
-        let nearest = self.tree.nearest_one::<SquaredEuclidean>(&p);
-        nearest.item
+    pub fn nearest_one(&self, query: &Vector<D>) -> Vector<D> {
+        let array: [f64; D] = (*query).into();
+        let p = Euclidean(array.to_vec());
+        let nearest = self.tree.nearest(&p).unwrap();
+        let item: [f64; D] = nearest.item.inner().clone().try_into().unwrap();
+        item.into()
     }
-}
 
-pub fn associate<const D: usize>(kdtree: &KdTree<D>, src: &Vec<Vector<D>>) -> Vec<(usize, usize)> {
-    let mut correspondence = vec![];
-    for (query_index, query) in src.iter().enumerate() {
-        let nearest_index = kdtree.nearest_one(&query);
-        correspondence.push((query_index, nearest_index));
+    pub fn nearest_ones(&self, src: &Vec<Vector<D>>) -> Vec<Vector<D>> {
+        let mut dst = vec![];
+        for query in src.iter() {
+            let neighbor = self.nearest_one(&query);
+            dst.push(neighbor);
+        }
+        dst
     }
-    correspondence
-}
 
-pub fn get_corresponding_points<const D: usize>(
-    correspondence: &Vec<(usize, usize)>,
-    src: &Vec<Vector<D>>,
-    dst: &Vec<Vector<D>>,
-) -> (Vec<Vector<D>>, Vec<Vector<D>>) {
-    let src_points = correspondence
-        .iter()
-        .map(|(src_index, _)| src[*src_index])
-        .collect::<Vec<_>>();
-    let dst_points = correspondence
-        .iter()
-        .map(|(_, dst_index)| dst[*dst_index])
-        .collect::<Vec<_>>();
-    (src_points, dst_points)
 }
 
 #[test]
@@ -69,13 +57,11 @@ fn test_association() {
     let dst = vec![src[3], src[2], src[5], src[0], src[1], src[4]];
 
     let kdtree = KdTree::new(&dst);
-    let correspondence = associate(&kdtree, &src);
+    let nearest_dsts = kdtree.nearest_ones(&src);
 
-    assert_eq!(src.len(), correspondence.len());
+    assert_eq!(src.len(), nearest_dsts.len());
 
-    let (sp, dp) = get_corresponding_points(&correspondence, &src, &dst);
-
-    for (s, d) in sp.iter().zip(dp.iter()) {
+    for (s, d) in src.iter().zip(nearest_dsts.iter()) {
         assert_eq!(s, d);
     }
 }

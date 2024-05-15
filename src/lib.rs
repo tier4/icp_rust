@@ -4,7 +4,6 @@
 
 #[macro_use]
 extern crate alloc;
-extern crate test;
 
 use alloc::vec::Vec;
 
@@ -101,9 +100,8 @@ pub fn icp_2dscan(
             .map(|sp| transform.transform(&sp))
             .collect::<Vec<Vector2>>();
 
-        let correspondence = kdtree::associate(&kdtree, &src_tranformed);
-        let (sp, dp) = kdtree::get_corresponding_points(&correspondence, &src_tranformed, dst);
-        let dtransform = estimate_transform(&sp, &dp);
+        let nearest_dsts = kdtree.nearest_ones(&src_tranformed);
+        let dtransform = estimate_transform(&src_tranformed, &nearest_dsts);
 
         transform = dtransform * transform;
     }
@@ -125,9 +123,8 @@ pub fn icp_3dscan(
             .map(|sp| transform_xy(&transform, &sp))
             .collect::<Vec<Vector3>>();
 
-        let correspondence = kdtree::associate(&kdtree, &src_tranformed);
-        let (sp, dp) = kdtree::get_corresponding_points(&correspondence, &src_tranformed, dst);
-        let dtransform = estimate_transform(&get_xy(&sp), &get_xy(&dp));
+        let nearest_dsts = kdtree.nearest_ones(&src_tranformed);
+        let dtransform = estimate_transform(&get_xy(&src_tranformed), &get_xy(&nearest_dsts));
 
         transform = dtransform * transform;
     }

@@ -8,7 +8,6 @@ default = []
 std = []
 
 [dependencies]
-kiddo = "3.0.0"
 
 [dependencies.nalgebra]
 version = "0.32.3"
@@ -17,6 +16,10 @@ features = ["macros"]
 
 [dependencies.num-traits]
 version = "0.2"
+default-features = false
+
+[dependencies.acap]
+path = "./acap"
 default-features = false
 
 [dev-dependencies]
