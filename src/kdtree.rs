@@ -2,12 +2,11 @@ use alloc::vec::Vec;
 
 use acap::NearestNeighbors;
 use acap::euclid::Euclidean;
-use acap::vp::VpTree;
 
 use crate::types::Vector;
 
 pub struct KdTree<const D: usize> {
-    tree: VpTree<Euclidean<Vec<f64>>>,
+    tree: acap::kd::KdTree<Euclidean<Vec<f64>>>,
 }
 
 impl<const D: usize> KdTree<D> {
@@ -18,7 +17,7 @@ impl<const D: usize> KdTree<D> {
             let p = Euclidean(array.to_vec());
             points.push(p);
         }
-        KdTree { tree: VpTree::balanced(points) }
+        KdTree { tree: acap::kd::KdTree::balanced(points) }
     }
 
     pub fn nearest_one(&self, query: &Vector<D>) -> Vector<D> {

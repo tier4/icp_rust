@@ -3,7 +3,7 @@ use crate::types::{Rotation2, Vector2, Vector3};
 
 use core::ops::Mul;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Transform {
     pub rot: Rotation2,
     pub t: Vector2,
