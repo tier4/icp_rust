@@ -6,26 +6,30 @@ use acap::euclid::Euclidean;
 use crate::types::Vector;
 
 pub struct KdTree<const D: usize> {
-    tree: acap::kd::KdTree<Euclidean<Vec<f64>>>,
+    tree: acap::kd::KdTree<Euclidean<[f64; D]>>,
+}
+
+fn as_array<const D: usize>(v: &Vector<D>) -> [f64; D] {
+    v.data.0[0]
 }
 
 impl<const D: usize> KdTree<D> {
     pub fn new(landmarks: &Vec<Vector<D>>) -> Self {
         let mut points = vec![];
         for landmark in landmarks.iter() {
-            let array: [f64; D] = (*landmark).into();
-            let p = Euclidean(array.to_vec());
+            let array: [f64; D] = as_array(landmark);
+            let p = Euclidean(array);
             points.push(p);
         }
         KdTree { tree: acap::kd::KdTree::balanced(points) }
     }
 
     pub fn nearest_one(&self, query: &Vector<D>) -> Vector<D> {
-        let array: [f64; D] = (*query).into();
-        let p = Euclidean(array.to_vec());
+        let slice: [f64; D] = as_array(query);
+        let p = Euclidean(slice);
         let nearest = self.tree.nearest(&p).unwrap();
-        let item: [f64; D] = nearest.item.inner().clone().try_into().unwrap();
-        item.into()
+        let item: &[f64; D] = nearest.item.inner();
+        (*item).into()
     }
 
     pub fn nearest_ones(&self, src: &Vec<Vector<D>>) -> Vec<Vector<D>> {
