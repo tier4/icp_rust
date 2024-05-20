@@ -18,8 +18,8 @@ features = ["macros"]
 version = "0.2"
 default-features = false
 
-[dependencies.acap]
-path = "./acap"
+[dependencies.kdtree]
+path = "./kdtree-rs"
 default-features = false
 
 [dev-dependencies]

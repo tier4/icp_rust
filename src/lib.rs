@@ -1,5 +1,4 @@
 #![cfg_attr(not(feature = "std"), no_std)]
-
 #![feature(stmt_expr_attributes)]
 
 #[macro_use]
@@ -85,11 +84,7 @@ fn get_xy(xyz: &Vec<Vector3>) -> Vec<Vector2> {
     xyz.iter().map(f).collect::<Vec<Vector2>>()
 }
 
-pub fn icp_2dscan(
-    initial_transform: &Transform,
-    src: &Vec<Vector2>,
-    dst: &Vec<Vector2>,
-) -> Transform {
+pub fn icp_2dscan(initial_transform: &Transform, src: &[Vector2], dst: &[Vector2]) -> Transform {
     let kdtree = kdtree::KdTree::new(dst);
     let max_iter: usize = 20;
 
@@ -108,11 +103,7 @@ pub fn icp_2dscan(
     transform
 }
 
-pub fn icp_3dscan(
-    initial_transform: &Transform,
-    src: &Vec<Vector3>,
-    dst: &Vec<Vector3>,
-) -> Transform {
+pub fn icp_3dscan(initial_transform: &Transform, src: &[Vector3], dst: &[Vector3]) -> Transform {
     let kdtree = kdtree::KdTree::new(dst);
     let max_iter: usize = 20;
 

@@ -1,35 +1,32 @@
 use alloc::vec::Vec;
 
-use acap::NearestNeighbors;
-use acap::euclid::Euclidean;
-
 use crate::types::Vector;
+use kdtree::distance::squared_euclidean;
 
-pub struct KdTree<const D: usize> {
-    tree: acap::kd::KdTree<Euclidean<[f64; D]>>,
+pub struct KdTree<'a, const D: usize> {
+    tree: kdtree::KdTree<f64, usize, [f64; D]>,
+    landmarks: &'a [Vector<D>],
 }
 
 fn as_array<const D: usize>(v: &Vector<D>) -> [f64; D] {
     v.data.0[0]
 }
 
-impl<const D: usize> KdTree<D> {
-    pub fn new(landmarks: &Vec<Vector<D>>) -> Self {
-        let mut points = vec![];
-        for landmark in landmarks.iter() {
-            let array: [f64; D] = as_array(landmark);
-            let p = Euclidean(array);
-            points.push(p);
+impl<'a, const D: usize> KdTree<'a, D> {
+    pub fn new(landmarks: &'a [Vector<D>]) -> KdTree<'a, D> {
+        let mut tree = kdtree::KdTree::new(D);
+        for (i, landmark) in landmarks.iter().enumerate() {
+            let p: [f64; D] = as_array(landmark);
+            tree.add(p, i).unwrap();
         }
-        KdTree { tree: acap::kd::KdTree::balanced(points) }
+        KdTree { tree, landmarks }
     }
 
     pub fn nearest_one(&self, query: &Vector<D>) -> Vector<D> {
-        let slice: [f64; D] = as_array(query);
-        let p = Euclidean(slice);
-        let nearest = self.tree.nearest(&p).unwrap();
-        let item: &[f64; D] = nearest.item.inner();
-        (*item).into()
+        let p: [f64; D] = as_array(query);
+        let items = self.tree.nearest(&p, 1, &squared_euclidean).unwrap();
+        let (_distance, index) = items[0];
+        self.landmarks[*index]
     }
 
     pub fn nearest_ones(&self, src: &Vec<Vector<D>>) -> Vec<Vector<D>> {
@@ -40,7 +37,6 @@ impl<const D: usize> KdTree<D> {
         }
         dst
     }
-
 }
 
 #[test]
