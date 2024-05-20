@@ -29,7 +29,7 @@ impl<'a, const D: usize> KdTree<'a, D> {
         self.landmarks[*index]
     }
 
-    pub fn nearest_ones(&self, src: &Vec<Vector<D>>) -> Vec<Vector<D>> {
+    pub fn nearest_ones(&self, src: &[Vector<D>]) -> Vec<Vector<D>> {
         let mut dst = vec![];
         for query in src.iter() {
             let neighbor = self.nearest_one(&query);
