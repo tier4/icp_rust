@@ -1,4 +1,4 @@
 [submodule "kdtree-rs"]
     path = kdtree-rs
-    url = https://github.com/IshitaTakeshi/kdtree-rs/
+    url = https://github.com/IshitaTakeshi/kdtree-rs.git
     branch = no-std
