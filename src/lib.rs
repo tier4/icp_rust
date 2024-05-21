@@ -1,11 +1,16 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![feature(stmt_expr_attributes)]
+#![feature(test)]
 
+//!
+//! The detailed jacobian derivation process is at [`doc::jacobian`].
 #[macro_use]
 extern crate alloc;
+extern crate test;
 
 use alloc::vec::Vec;
 
+pub mod doc;
 pub mod se2;
 pub mod so2;
 pub mod transform;
