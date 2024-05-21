@@ -19,7 +19,8 @@ version = "0.2"
 default-features = false
 
 [dependencies.kdtree]
-path = "./kdtree-rs"
+git = "https://github.com/IshitaTakeshi/kdtree-rs"
+branch = "no-std"
 default-features = false
 
 [dev-dependencies]
