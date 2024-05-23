@@ -87,7 +87,13 @@ fn get_xy(xyz: &Vec<Vector3>) -> Vec<Vector2> {
     xyz.iter().map(f).collect::<Vec<Vector2>>()
 }
 
-pub fn icp_2dscan(initial_transform: &Transform, src: &[Vector2], dst: &[Vector2]) -> Transform {
+/// Estimates the transform that converts the `src` points to `dst`.
+///
+pub fn icp_2dscan(
+    initial_transform: &Transform,
+    src: &Vec<Vector2>,
+    dst: &Vec<Vector2>,
+) -> Transform {
     let kdtree = kdtree::KdTree::new(dst);
     let max_iter: usize = 20;
 
@@ -106,7 +112,13 @@ pub fn icp_2dscan(initial_transform: &Transform, src: &[Vector2], dst: &[Vector2
     transform
 }
 
-pub fn icp_3dscan(initial_transform: &Transform, src: &[Vector3], dst: &[Vector3]) -> Transform {
+/// Estimates the transform on the xy-plane that converts the `src` points to `dst`.
+/// This function assumes that the vehicle, LiDAR or other point cloud scanner is moving on the xy-plane.
+pub fn icp_3dscan(
+    initial_transform: &Transform,
+    src: &Vec<Vector3>,
+    dst: &Vec<Vector3>,
+) -> Transform {
     let kdtree = kdtree::KdTree::new(dst);
     let max_iter: usize = 20;
 
