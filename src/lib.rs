@@ -91,8 +91,8 @@ fn get_xy(xyz: &Vec<Vector3>) -> Vec<Vector2> {
 ///
 pub fn icp_2dscan(
     initial_transform: &Transform,
-    src: &Vec<Vector2>,
-    dst: &Vec<Vector2>,
+    src: &[Vector2],
+    dst: &[Vector2],
 ) -> Transform {
     let kdtree = kdtree::KdTree::new(dst);
     let max_iter: usize = 20;
@@ -116,8 +116,8 @@ pub fn icp_2dscan(
 /// This function assumes that the vehicle, LiDAR or other point cloud scanner is moving on the xy-plane.
 pub fn icp_3dscan(
     initial_transform: &Transform,
-    src: &Vec<Vector3>,
-    dst: &Vec<Vector3>,
+    src: &[Vector3],
+    dst: &[Vector3],
 ) -> Transform {
     let kdtree = kdtree::KdTree::new(dst);
     let max_iter: usize = 20;
