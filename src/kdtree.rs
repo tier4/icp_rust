@@ -1,32 +1,29 @@
 use alloc::vec::Vec;
 
 use crate::types::Vector;
-use kdtree::distance::squared_euclidean;
 
-pub struct KdTree<'a, const D: usize> {
-    tree: kdtree::KdTree<f64, usize, [f64; D]>,
-    landmarks: &'a [Vector<D>],
+use kiddo::immutable::float::kdtree::ImmutableKdTree;
+
+pub struct KdTree<const D: usize> {
+    tree: ImmutableKdTree<f64, usize, D, 32>,
+    slice: Vec<[f64; D]>
 }
 
-fn as_array<const D: usize>(v: &Vector<D>) -> [f64; D] {
-    v.data.0[0]
+fn as_array<const D: usize>(v: &Vector<D>) -> &[f64; D] {
+    &v.data.0[0]
 }
 
-impl<'a, const D: usize> KdTree<'a, D> {
-    pub fn new(landmarks: &'a [Vector<D>]) -> KdTree<'a, D> {
-        let mut tree = kdtree::KdTree::new(D);
-        for (i, landmark) in landmarks.iter().enumerate() {
-            let p: [f64; D] = as_array(landmark);
-            tree.add(p, i).unwrap();
-        }
-        KdTree { tree, landmarks }
+impl<const D: usize> KdTree<D> {
+    pub fn new(landmarks: &[Vector<D>]) -> KdTree<D> {
+        let slice: Vec<[f64; D]> = landmarks.iter().map(|p| *as_array(p)).collect();
+        let tree = ImmutableKdTree::new_from_slice(&slice);
+        KdTree { tree, slice }
     }
 
     pub fn nearest_one(&self, query: &Vector<D>) -> Vector<D> {
-        let p: [f64; D] = as_array(query);
-        let items = self.tree.nearest(&p, 1, &squared_euclidean).unwrap();
-        let (_distance, index) = items[0];
-        self.landmarks[*index]
+        let p: &[f64; D] = as_array(query);
+        let neighbor = self.tree.nearest_one::<kiddo::SquaredEuclidean>(p);
+        self.slice[neighbor.item].into()
     }
 
     pub fn nearest_ones(&self, src: &[Vector<D>]) -> Vec<Vector<D>> {

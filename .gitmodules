@@ -1,0 +1,4 @@
+[submodule "kiddo"]
+    path = kiddo
+    url = https://github.com/IshitaTakeshi/kiddo
+    branch = raspberry-pi
