@@ -5,7 +5,7 @@ use crate::types::Vector;
 use kiddo::immutable::float::kdtree::ImmutableKdTree;
 
 pub struct KdTree<const D: usize> {
-    tree: ImmutableKdTree<f64, usize, D, 32>,
+    tree: ImmutableKdTree<f64, usize, D, 128>,
     slice: Vec<[f64; D]>
 }
 
