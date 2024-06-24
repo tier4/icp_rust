@@ -14,12 +14,12 @@ pub mod so2;
 pub mod transform;
 
 mod huber;
-mod kdtree;
 mod linalg;
 mod norm;
 mod stats;
 mod types;
 
+use nearest_neighbor::KdTree;
 pub use crate::norm::norm;
 pub use crate::transform::Transform;
 pub use crate::types::{Rotation2, Vector2, Vector3};
@@ -87,54 +87,77 @@ fn get_xy(xyz: &Vec<Vector3>) -> Vec<Vector2> {
     xyz.iter().map(f).collect::<Vec<Vector2>>()
 }
 
-/// Estimates the transform that converts the `src` points to `dst`.
-///
-pub fn icp_2dscan(
-    initial_transform: &Transform,
-    src: &[Vector2],
-    dst: &[Vector2],
-) -> Transform {
-    let kdtree = kdtree::KdTree::new(dst);
-    let max_iter: usize = 20;
-
-    let mut transform = *initial_transform;
-    for _ in 0..max_iter {
-        let src_tranformed = src
-            .iter()
-            .map(|sp| transform.transform(&sp))
-            .collect::<Vec<Vector2>>();
-
-        let nearest_dsts = kdtree.nearest_ones(&src_tranformed);
-        let dtransform = estimate_transform(&src_tranformed, &nearest_dsts);
-
-        transform = dtransform * transform;
-    }
-    transform
+pub struct Icp2d<'a> {
+    kdtree: KdTree<'a, f64, 2>,
+    dst: &'a [Vector2]
 }
 
-/// Estimates the transform on the xy-plane that converts the `src` points to `dst`.
-/// This function assumes that the vehicle, LiDAR or other point cloud scanner is moving on the xy-plane.
-pub fn icp_3dscan(
-    initial_transform: &Transform,
-    src: &[Vector3],
-    dst: &[Vector3],
-) -> Transform {
-    let kdtree = kdtree::KdTree::new(dst);
-    let max_iter: usize = 20;
-
-    let mut transform = *initial_transform;
-    for _ in 0..max_iter {
-        let src_tranformed = src
-            .iter()
-            .map(|sp| transform_xy(&transform, &sp))
-            .collect::<Vec<Vector3>>();
-
-        let nearest_dsts = kdtree.nearest_ones(&src_tranformed);
-        let dtransform = estimate_transform(&get_xy(&src_tranformed), &get_xy(&nearest_dsts));
-
-        transform = dtransform * transform;
+impl<'a> Icp2d<'a> {
+    pub fn new(dst: &'a [Vector2]) -> Self {
+        Icp2d { kdtree: KdTree::new(dst, 1), dst }
     }
-    transform
+
+    /// Estimates the transform that converts the `src` points to `dst`.
+    pub fn estimate(
+        &self,
+        src: &[Vector2],
+        initial_transform: &Transform,
+        max_iter: usize
+    ) -> Transform {
+        let mut transform = *initial_transform;
+        for _ in 0..max_iter {
+            let src_tranformed = src
+                .iter()
+                .map(|sp| transform.transform(&sp))
+                .collect::<Vec<Vector2>>();
+
+            let nearest_dsts = src_tranformed.iter().map(|&sp| {
+                let (index, _distance) = self.kdtree.search(&sp);
+                self.dst[index.unwrap()]
+            }).collect();
+            let dtransform = estimate_transform(&src_tranformed, &nearest_dsts);
+
+            transform = dtransform * transform;
+        }
+        transform
+    }
+}
+
+pub struct Icp3d<'a> {
+    kdtree: KdTree<'a, f64, 3>,
+    dst: &'a [Vector3]
+}
+
+impl<'a> Icp3d<'a> {
+    pub fn new(dst: &'a [Vector3]) -> Self {
+        Icp3d { kdtree: KdTree::new(dst, 1), dst }
+    }
+
+    /// Estimates the transform on the xy-plane that converts the `src` points to `dst`.
+    /// This function assumes that the vehicle, LiDAR or other point cloud scanner is moving on the xy-plane.
+    pub fn estimate(
+        &self,
+        src: &[Vector3],
+        initial_transform: &Transform,
+        max_iter: usize
+    ) -> Transform {
+        let mut transform = *initial_transform;
+        for _ in 0..max_iter {
+            let src_tranformed = src
+                .iter()
+                .map(|sp| transform_xy(&transform, &sp))
+                .collect::<Vec<Vector3>>();
+
+            let nearest_dsts = src_tranformed.iter().map(|&sp| {
+                let (index, _distance) = self.kdtree.search(&sp);
+                self.dst[index.unwrap()]
+            }).collect();
+            let dtransform = estimate_transform(&get_xy(&src_tranformed), &get_xy(&nearest_dsts));
+
+            transform = dtransform * transform;
+        }
+        transform
+    }
 }
 
 fn jacobian(rot: &Rotation2, landmark: &Vector2) -> Jacobian {
@@ -434,7 +457,7 @@ mod tests {
             Vector2::new(-0.00444043, 0.00658505),
             Vector2::new(-0.01576271, -0.00701065),
             Vector2::new(0.00464000, -0.00406790),
-            // Vector2::new(-0.32268585,  0.49653010),  // but add much larger noise here
+            // Vector2::new(-0.32268585,  0.49653010),  // Much larger noise than others
             Vector2::new(0.00269374, -0.00787015),
             Vector2::new(-0.00494243, 0.00350137),
             Vector2::new(0.00343766, -0.00039311),
@@ -505,7 +528,8 @@ mod tests {
 
         let noise = Transform::new(&Param::new(0.05, 0.010, 0.010));
         let initial_transform = noise * true_transform;
-        let pred_transform = icp_3dscan(&initial_transform, &src, &dst);
+        let icp = Icp3d::new(&dst);
+        let pred_transform = icp.estimate(&src, &initial_transform, 20);
 
         for (sp, dp_true) in src.iter().zip(dst.iter()) {
             let dp_pred = transform_xy(&pred_transform, &sp);
@@ -548,7 +572,8 @@ mod tests {
 
         let noise = Transform::new(&Param::new(0.05, 0.010, 0.010));
         let initial_transform = noise * true_transform;
-        let pred_transform = icp_2dscan(&initial_transform, &src, &dst);
+        let icp = Icp2d::new(&dst);
+        let pred_transform = icp.estimate(&src, &initial_transform, 20);
 
         for (sp, dp_true) in src.iter().zip(dst.iter()) {
             let dp_pred = pred_transform.transform(&sp);

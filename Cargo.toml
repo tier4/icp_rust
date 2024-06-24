@@ -14,12 +14,12 @@ version = "0.32.3"
 default-features = false
 features = ["macros"]
 
-[dependencies.kiddo]
-default-features = false
-path = "./kiddo"
-
 [dependencies.num-traits]
 version = "0.2"
+default-features = false
+
+[dependencies.nearest_neighbor]
+path = "../nearest_neighbor"
 default-features = false
 
 [dev-dependencies]
