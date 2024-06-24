@@ -20,7 +20,7 @@ default-features = false
 
 [dependencies.nearest_neighbor]
 git = "https://github.com/IshitaTakeshi/nearest_neighbor_rust.git"
-branch = "develop"
+branch = "main"
 default-features = false
 
 [dev-dependencies]
