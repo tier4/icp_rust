@@ -1,9 +1,8 @@
+//! The detailed jacobian derivation process is at [`doc::jacobian`].
+
 #![cfg_attr(not(feature = "std"), no_std)]
 #![feature(stmt_expr_attributes)]
 
-//!
-//! The detailed jacobian derivation process is at [`doc::jacobian`].
-#[macro_use]
 extern crate alloc;
 
 use alloc::vec::Vec;
