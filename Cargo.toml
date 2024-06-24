@@ -19,7 +19,8 @@ version = "0.2"
 default-features = false
 
 [dependencies.nearest_neighbor]
-path = "../nearest_neighbor"
+git = "https://github.com/IshitaTakeshi/nearest_neighbor_rust.git"
+branch = "develop"
 default-features = false
 
 [dev-dependencies]
