@@ -19,10 +19,10 @@ mod norm;
 mod stats;
 mod types;
 
-use nearest_neighbor::KdTree;
 pub use crate::norm::norm;
 pub use crate::transform::Transform;
 pub use crate::types::{Rotation2, Vector2, Vector3};
+use nearest_neighbor::KdTree;
 
 pub type Param = nalgebra::Vector3<f64>;
 type Jacobian = nalgebra::Matrix2x3<f64>;
@@ -89,12 +89,15 @@ fn get_xy(xyz: &Vec<Vector3>) -> Vec<Vector2> {
 
 pub struct Icp2d<'a> {
     kdtree: KdTree<'a, f64, 2>,
-    dst: &'a [Vector2]
+    dst: &'a [Vector2],
 }
 
 impl<'a> Icp2d<'a> {
     pub fn new(dst: &'a [Vector2]) -> Self {
-        Icp2d { kdtree: KdTree::new(dst, 1), dst }
+        Icp2d {
+            kdtree: KdTree::new(dst, 1),
+            dst,
+        }
     }
 
     /// Estimates the transform that converts the `src` points to `dst`.
@@ -102,7 +105,7 @@ impl<'a> Icp2d<'a> {
         &self,
         src: &[Vector2],
         initial_transform: &Transform,
-        max_iter: usize
+        max_iter: usize,
     ) -> Transform {
         let mut transform = *initial_transform;
         for _ in 0..max_iter {
@@ -111,10 +114,13 @@ impl<'a> Icp2d<'a> {
                 .map(|sp| transform.transform(&sp))
                 .collect::<Vec<Vector2>>();
 
-            let nearest_dsts = src_tranformed.iter().map(|&sp| {
-                let (index, _distance) = self.kdtree.search(&sp);
-                self.dst[index.unwrap()]
-            }).collect();
+            let nearest_dsts = src_tranformed
+                .iter()
+                .map(|&sp| {
+                    let (index, _distance) = self.kdtree.search(&sp);
+                    self.dst[index.unwrap()]
+                })
+                .collect();
             let dtransform = estimate_transform(&src_tranformed, &nearest_dsts);
 
             transform = dtransform * transform;
@@ -125,12 +131,15 @@ impl<'a> Icp2d<'a> {
 
 pub struct Icp3d<'a> {
     kdtree: KdTree<'a, f64, 3>,
-    dst: &'a [Vector3]
+    dst: &'a [Vector3],
 }
 
 impl<'a> Icp3d<'a> {
     pub fn new(dst: &'a [Vector3]) -> Self {
-        Icp3d { kdtree: KdTree::new(dst, 1), dst }
+        Icp3d {
+            kdtree: KdTree::new(dst, 1),
+            dst,
+        }
     }
 
     /// Estimates the transform on the xy-plane that converts the `src` points to `dst`.
@@ -139,7 +148,7 @@ impl<'a> Icp3d<'a> {
         &self,
         src: &[Vector3],
         initial_transform: &Transform,
-        max_iter: usize
+        max_iter: usize,
     ) -> Transform {
         let mut transform = *initial_transform;
         for _ in 0..max_iter {
@@ -148,10 +157,13 @@ impl<'a> Icp3d<'a> {
                 .map(|sp| transform_xy(&transform, &sp))
                 .collect::<Vec<Vector3>>();
 
-            let nearest_dsts = src_tranformed.iter().map(|&sp| {
-                let (index, _distance) = self.kdtree.search(&sp);
-                self.dst[index.unwrap()]
-            }).collect();
+            let nearest_dsts = src_tranformed
+                .iter()
+                .map(|&sp| {
+                    let (index, _distance) = self.kdtree.search(&sp);
+                    self.dst[index.unwrap()]
+                })
+                .collect();
             let dtransform = estimate_transform(&get_xy(&src_tranformed), &get_xy(&nearest_dsts));
 
             transform = dtransform * transform;
