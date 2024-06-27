@@ -1,6 +1,8 @@
 // Linear time median search
 use alloc::vec::Vec;
 
+use num_traits::real::Real;
+
 use crate::types::Vector;
 
 pub fn mutable_median(input: &mut Vec<f64>) -> Option<f64> {

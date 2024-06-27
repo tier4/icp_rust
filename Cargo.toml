@@ -8,7 +8,6 @@ default = []
 std = []
 
 [dependencies]
-kiddo = "3.0.0"
 
 [dependencies.nalgebra]
 version = "0.32.3"
@@ -17,6 +16,11 @@ features = ["macros"]
 
 [dependencies.num-traits]
 version = "0.2"
+default-features = false
+
+[dependencies.nearest_neighbor]
+git = "https://github.com/tier4/nearest_neighbor_rust.git"
+branch = "main"
 default-features = false
 
 [dev-dependencies]
@@ -31,5 +35,5 @@ rev = "7293411c"
 [dev-dependencies.plotters]
 version = "0.3.5"
 git = "https://github.com/plotters-rs/plotters.git"
-default_features = false
+default-features = false
 features = ["all_series"]

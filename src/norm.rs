@@ -1,5 +1,7 @@
 use nalgebra::{Dim, Matrix, Storage};
 
+use num_traits::real::Real;
+
 pub fn norm_squared<R: Dim, C: Dim, S: Storage<f64, R, C>>(matrix: &Matrix<f64, R, C, S>) -> f64 {
     let mut res = 0f64;
 

@@ -1,19 +1,18 @@
+//! The detailed jacobian derivation process is at [`doc::jacobian`].
+
 #![cfg_attr(not(feature = "std"), no_std)]
 #![feature(stmt_expr_attributes)]
-#![feature(test)]
 
-#[macro_use]
 extern crate alloc;
-extern crate test;
 
 use alloc::vec::Vec;
 
+pub mod doc;
 pub mod se2;
 pub mod so2;
 pub mod transform;
 
 mod huber;
-mod kdtree;
 mod linalg;
 mod norm;
 mod stats;
@@ -22,6 +21,7 @@ mod types;
 pub use crate::norm::norm;
 pub use crate::transform::Transform;
 pub use crate::types::{Rotation2, Vector2, Vector3};
+use nearest_neighbor::KdTree;
 
 pub type Param = nalgebra::Vector3<f64>;
 type Jacobian = nalgebra::Matrix2x3<f64>;
@@ -86,52 +86,89 @@ fn get_xy(xyz: &Vec<Vector3>) -> Vec<Vector2> {
     xyz.iter().map(f).collect::<Vec<Vector2>>()
 }
 
-pub fn icp_2dscan(
-    initial_transform: &Transform,
-    src: &Vec<Vector2>,
-    dst: &Vec<Vector2>,
-) -> Transform {
-    let kdtree = kdtree::KdTree::new(dst);
-    let max_iter: usize = 20;
-
-    let mut transform = *initial_transform;
-    for _ in 0..max_iter {
-        let src_tranformed = src
-            .iter()
-            .map(|sp| transform.transform(&sp))
-            .collect::<Vec<Vector2>>();
-
-        let correspondence = kdtree::associate(&kdtree, &src_tranformed);
-        let (sp, dp) = kdtree::get_corresponding_points(&correspondence, &src_tranformed, dst);
-        let dtransform = estimate_transform(&sp, &dp);
-
-        transform = dtransform * transform;
-    }
-    transform
+pub struct Icp2d<'a> {
+    kdtree: KdTree<'a, f64, 2>,
+    dst: &'a [Vector2],
 }
 
-pub fn icp_3dscan(
-    initial_transform: &Transform,
-    src: &Vec<Vector3>,
-    dst: &Vec<Vector3>,
-) -> Transform {
-    let kdtree = kdtree::KdTree::new(dst);
-    let max_iter: usize = 20;
-
-    let mut transform = *initial_transform;
-    for _ in 0..max_iter {
-        let src_tranformed = src
-            .iter()
-            .map(|sp| transform_xy(&transform, &sp))
-            .collect::<Vec<Vector3>>();
-
-        let correspondence = kdtree::associate(&kdtree, &src_tranformed);
-        let (sp, dp) = kdtree::get_corresponding_points(&correspondence, &src_tranformed, dst);
-        let dtransform = estimate_transform(&get_xy(&sp), &get_xy(&dp));
-
-        transform = dtransform * transform;
+impl<'a> Icp2d<'a> {
+    pub fn new(dst: &'a [Vector2]) -> Self {
+        Icp2d {
+            kdtree: KdTree::new(dst, 1),
+            dst,
+        }
     }
-    transform
+
+    /// Estimates the transform that converts the `src` points to `dst`.
+    pub fn estimate(
+        &self,
+        src: &[Vector2],
+        initial_transform: &Transform,
+        max_iter: usize,
+    ) -> Transform {
+        let mut transform = *initial_transform;
+        for _ in 0..max_iter {
+            let src_tranformed = src
+                .iter()
+                .map(|sp| transform.transform(&sp))
+                .collect::<Vec<Vector2>>();
+
+            let nearest_dsts = src_tranformed
+                .iter()
+                .map(|&sp| {
+                    let (index, _distance) = self.kdtree.search(&sp);
+                    self.dst[index.unwrap()]
+                })
+                .collect();
+            let dtransform = estimate_transform(&src_tranformed, &nearest_dsts);
+
+            transform = dtransform * transform;
+        }
+        transform
+    }
+}
+
+pub struct Icp3d<'a> {
+    kdtree: KdTree<'a, f64, 3>,
+    dst: &'a [Vector3],
+}
+
+impl<'a> Icp3d<'a> {
+    pub fn new(dst: &'a [Vector3]) -> Self {
+        Icp3d {
+            kdtree: KdTree::new(dst, 1),
+            dst,
+        }
+    }
+
+    /// Estimates the transform on the xy-plane that converts the `src` points to `dst`.
+    /// This function assumes that the vehicle, LiDAR or other point cloud scanner is moving on the xy-plane.
+    pub fn estimate(
+        &self,
+        src: &[Vector3],
+        initial_transform: &Transform,
+        max_iter: usize,
+    ) -> Transform {
+        let mut transform = *initial_transform;
+        for _ in 0..max_iter {
+            let src_tranformed = src
+                .iter()
+                .map(|sp| transform_xy(&transform, &sp))
+                .collect::<Vec<Vector3>>();
+
+            let nearest_dsts = src_tranformed
+                .iter()
+                .map(|&sp| {
+                    let (index, _distance) = self.kdtree.search(&sp);
+                    self.dst[index.unwrap()]
+                })
+                .collect();
+            let dtransform = estimate_transform(&get_xy(&src_tranformed), &get_xy(&nearest_dsts));
+
+            transform = dtransform * transform;
+        }
+        transform
+    }
 }
 
 fn jacobian(rot: &Rotation2, landmark: &Vector2) -> Jacobian {
@@ -431,7 +468,7 @@ mod tests {
             Vector2::new(-0.00444043, 0.00658505),
             Vector2::new(-0.01576271, -0.00701065),
             Vector2::new(0.00464000, -0.00406790),
-            // Vector2::new(-0.32268585,  0.49653010),  // but add much larger noise here
+            // Vector2::new(-0.32268585,  0.49653010),  // Much larger noise than others
             Vector2::new(0.00269374, -0.00787015),
             Vector2::new(-0.00494243, 0.00350137),
             Vector2::new(0.00343766, -0.00039311),
@@ -502,7 +539,8 @@ mod tests {
 
         let noise = Transform::new(&Param::new(0.05, 0.010, 0.010));
         let initial_transform = noise * true_transform;
-        let pred_transform = icp_3dscan(&initial_transform, &src, &dst);
+        let icp = Icp3d::new(&dst);
+        let pred_transform = icp.estimate(&src, &initial_transform, 20);
 
         for (sp, dp_true) in src.iter().zip(dst.iter()) {
             let dp_pred = transform_xy(&pred_transform, &sp);
@@ -545,119 +583,12 @@ mod tests {
 
         let noise = Transform::new(&Param::new(0.05, 0.010, 0.010));
         let initial_transform = noise * true_transform;
-        let pred_transform = icp_2dscan(&initial_transform, &src, &dst);
+        let icp = Icp2d::new(&dst);
+        let pred_transform = icp.estimate(&src, &initial_transform, 20);
 
         for (sp, dp_true) in src.iter().zip(dst.iter()) {
             let dp_pred = pred_transform.transform(&sp);
             assert!(norm(&(dp_pred - dp_true)) < 1e-3);
         }
-    }
-
-    use test::Bencher;
-
-    #[bench]
-    fn bench_gauss_newton_update(b: &mut Bencher) {
-        let true_param = Param::new(10.0, 30.0, -0.15);
-        let true_transform = Transform::new(&true_param);
-        let dparam = Param::new(0.3, -0.5, 0.001);
-        let initial_param = true_param + dparam;
-
-        let src = vec![
-            Vector2::new(-8.89304516, 0.54202289),
-            Vector2::new(-4.03198385, -2.81807802),
-            Vector2::new(-5.9267953, 9.62339266),
-            Vector2::new(-4.04966218, -4.44595403),
-            Vector2::new(-2.8636942, -9.13843999),
-            Vector2::new(-6.97749644, -8.90180581),
-            Vector2::new(-9.66454985, 6.32282424),
-            Vector2::new(7.02264007, -0.88684585),
-            Vector2::new(4.1970011, -1.42366424),
-            // Vector2::new(-1.98903219, -0.96437383),  // corresponing to the large noise
-            Vector2::new(-0.68034875, -0.48699014),
-            Vector2::new(1.89645382, 1.861194),
-            Vector2::new(7.09550743, 2.18289525),
-            Vector2::new(-7.95383118, -5.16650913),
-            Vector2::new(-5.40235599, 2.70675665),
-            Vector2::new(-5.38909696, -5.48180288),
-            Vector2::new(-9.00498232, -5.12191142),
-            Vector2::new(-8.54899319, -3.25752055),
-            Vector2::new(6.89969814, 3.53276123),
-            Vector2::new(5.06875729, -0.2891854),
-        ];
-
-        // noise follows the normal distribution of
-        // mean 0.0 and standard deviation 0.01
-        let noise = [
-            Vector2::new(0.0105879, 0.01302535),
-            Vector2::new(0.01392508, 0.0083586),
-            Vector2::new(0.01113885, -0.00693269),
-            Vector2::new(0.01673124, -0.01735564),
-            Vector2::new(-0.01219263, 0.00080933),
-            Vector2::new(-0.00396817, 0.00111582),
-            Vector2::new(-0.00444043, 0.00658505),
-            Vector2::new(-0.01576271, -0.00701065),
-            Vector2::new(0.00464, -0.0040679),
-            // Vector2::new(-0.32268585, 0.49653010), // but add much larger noise here
-            Vector2::new(0.00269374, -0.00787015),
-            Vector2::new(-0.00494243, 0.00350137),
-            Vector2::new(0.00343766, -0.00039311),
-            Vector2::new(0.00661565, -0.00341112),
-            Vector2::new(-0.00936695, -0.00673899),
-            Vector2::new(-0.00240039, -0.00314409),
-            Vector2::new(-0.01434128, -0.0058539),
-            Vector2::new(0.00874225, 0.00295633),
-            Vector2::new(0.00736213, -0.00328875),
-            Vector2::new(0.00585082, -0.01232619),
-        ];
-
-        assert_eq!(src.len(), noise.len());
-        let dst = src
-            .iter()
-            .zip(noise.iter())
-            .map(|(p, n)| true_transform.transform(&p) + n)
-            .collect::<Vec<_>>();
-
-        let initial_transform = Transform::new(&initial_param);
-        b.iter(|| weighted_gauss_newton_update(&initial_transform, &src, &dst));
-    }
-
-    #[bench]
-    fn bench_icp(b: &mut Bencher) {
-        let src = vec![
-            Vector3::new(0.0, 0.0, 2.0),
-            Vector3::new(0.0, 0.1, 2.0),
-            Vector3::new(0.0, 0.2, 2.0),
-            Vector3::new(0.0, 0.3, 2.0),
-            Vector3::new(0.0, 0.4, 2.0),
-            Vector3::new(0.0, 0.5, 2.0),
-            Vector3::new(0.0, 0.6, 2.0),
-            Vector3::new(0.0, 0.7, 2.0),
-            Vector3::new(0.0, 0.8, 2.0),
-            Vector3::new(0.0, 0.9, 2.0),
-            Vector3::new(0.0, 1.0, 2.0),
-            Vector3::new(0.1, 0.0, 1.0),
-            Vector3::new(0.2, 0.0, 1.0),
-            Vector3::new(0.3, 0.0, 1.0),
-            Vector3::new(0.4, 0.0, 1.0),
-            Vector3::new(0.5, 0.0, 1.0),
-            Vector3::new(0.6, 0.0, 1.0),
-            Vector3::new(0.7, 0.0, 1.0),
-            Vector3::new(0.8, 0.0, 1.0),
-            Vector3::new(0.9, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 1.0),
-        ];
-
-        let true_param = Param::new(0.01, 0.01, -0.02);
-        let true_transform = Transform::new(&true_param);
-
-        let dst = src
-            .iter()
-            .map(|p| transform_xy(&true_transform, &p))
-            .collect::<Vec<Vector3>>();
-
-        let noise = Transform::new(&Param::new(0.05, 0.010, 0.010));
-        let initial_transform = noise * true_transform;
-
-        b.iter(|| icp_3dscan(&initial_transform, &src, &dst));
     }
 }

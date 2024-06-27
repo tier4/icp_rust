@@ -1,3 +1,5 @@
+use num_traits::real::Real;
+
 pub fn rho(e: f64, k: f64) -> f64 {
     debug_assert!(e >= 0.);
     debug_assert!(k >= 0.);
