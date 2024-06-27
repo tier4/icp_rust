@@ -1,6 +1,9 @@
 // Linear time median search
 use alloc::vec::Vec;
 
+// We need real::Real in no-std but GitHub CI raises some warning without this
+// attribute
+#[warn(unused_imports)]
 use num_traits::real::Real;
 
 use crate::types::Vector;
