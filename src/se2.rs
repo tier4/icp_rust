@@ -2,7 +2,7 @@ pub use crate::types::{Matrix2, Matrix3, Rotation2, Vector2, Vector3};
 
 // We need real::Real in no-std but GitHub CI raises some warning without this
 // attribute
-#[warn(unused_imports)]
+#[allow(unused_imports)]
 use num_traits::real::Real;
 
 use crate::so2;
