@@ -17,6 +17,7 @@ features = ["macros"]
 [dependencies.num-traits]
 version = "0.2"
 default-features = false
+features = ["libm"]
 
 [dependencies.nearest_neighbor]
 git = "https://github.com/tier4/nearest_neighbor_rust.git"
