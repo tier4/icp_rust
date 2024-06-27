@@ -19,7 +19,7 @@ version = "0.2"
 default-features = false
 
 [dependencies.nearest_neighbor]
-git = "https://github.com/IshitaTakeshi/nearest_neighbor_rust.git"
+git = "https://github.com/tier4/nearest_neighbor_rust.git"
 branch = "main"
 default-features = false
 
