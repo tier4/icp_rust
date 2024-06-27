@@ -1,5 +1,8 @@
 use nalgebra::{Dim, Matrix, Storage};
 
+// We need real::Real in no-std but GitHub CI raises some warning without this
+// attribute
+#[allow(unused_imports)]
 use num_traits::real::Real;
 
 pub fn norm_squared<R: Dim, C: Dim, S: Storage<f64, R, C>>(matrix: &Matrix<f64, R, C, S>) -> f64 {

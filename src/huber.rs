@@ -1,3 +1,6 @@
+// We need real::Real in no-std but GitHub CI raises some warning without this
+// attribute
+#[allow(unused_imports)]
 use num_traits::real::Real;
 
 pub fn rho(e: f64, k: f64) -> f64 {

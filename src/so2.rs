@@ -1,5 +1,8 @@
 pub use crate::types::{Matrix2, Matrix3, Rotation2, Vector2, Vector3};
 
+// We need real::Real in no-std but GitHub CI raises some warning without this
+// attribute
+#[allow(unused_imports)]
 use num_traits::real::Real;
 
 pub fn new_rotation2(theta: f64) -> Rotation2 {

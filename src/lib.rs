@@ -3,6 +3,8 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![feature(stmt_expr_attributes)]
 
+#[allow(unused_imports)]
+#[macro_use]
 extern crate alloc;
 
 use alloc::vec::Vec;
